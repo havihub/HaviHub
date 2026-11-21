@@ -1,9 +1,13 @@
 // Renderer side of the bridge: call('instances.list') -> value or throws.
+import { tm } from './i18n.js';
+
 const bridge = typeof window !== 'undefined' ? window.havihub : null;
 
 export class ApiError extends Error {
+  // the message in the person's language (errors from the main process are
+  // written in Spanish, see src/shared/usertext.js)
   constructor(err) {
-    super(err.message);
+    super(tm(err.message, err.i18n));
     this.code = err.code;
     this.data = err.data;
   }

@@ -274,7 +274,10 @@ await makeInstance(path.join(inst, 'Cave Dread'), { name: 'Cave Dread', mc: '1.2
 {
   const gameDir = path.join(inst, 'Cave Dread', 'minecraft');
   for (const [i, ago] of [[0, 0.1], [1, 0.3], [2, 1.2], [3, 38]].map(([i, d]) => [i, d * DAY])) {
-    const tt = new Date(now - ago);
+    // "today" (less than a day ago) stays after midnight, so the gallery's
+    // "Hoy" filter finds them whatever time it is
+    const midnight = new Date(now).setHours(0, 0, 0, 0);
+    const tt = new Date(ago < DAY ? midnight + (now - midnight) * (1 - ago / DAY) : now - ago);
     const name = `${tt.getFullYear()}-${String(tt.getMonth() + 1).padStart(2, '0')}-${String(tt.getDate()).padStart(2, '0')}_2${i}.1${i}.0${i}.png`;
     const f = path.join(gameDir, 'screenshots', name);
     write(f, screenshot(300 + i, false));

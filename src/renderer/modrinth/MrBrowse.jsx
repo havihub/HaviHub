@@ -4,9 +4,9 @@
 // (see shared/compat.js).
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from '../components/Icon.jsx';
-import { Checkbox, Spinner, Toggle, Pills, useDebounced } from '../components/ui.jsx';
+import { Checkbox, Spinner, Toggle, Pills, useDebounced, envInfo } from '../components/ui.jsx';
 import { Popover, MenuItem, useMenu } from '../components/Menu.jsx';
-import InstanceImage from '../components/InstanceImage.jsx';
+import InstanceImage, { LoaderIcon } from '../components/InstanceImage.jsx';
 import BrandLogo from '../components/BrandLogo.jsx';
 import { useApp } from '../lib/store.jsx';
 import { call } from '../lib/api.js';
@@ -45,6 +45,12 @@ function FilterSection({ title, children, open: initial = true }) {
 
 function ResultCard({ p, instance, installed, busy, onInstall, onOpen, issue }) {
   const updated = p.updated ? Date.parse(p.updated) : 0;
+  const env = p.type === 'mod' ? envInfo(p.env) : null;
+  // as many tags as Modrinth shows next to a button: 4, or 5 without the
+  // client/server one; categories first, then loaders, the rest as "+N"
+  const all = [...(p.categories || []).map((category) => ({ category })), ...(p.loaders || []).filter((l) => LOADER_NAME[l]).map((loader) => ({ loader }))];
+  const max = env ? 4 : 5;
+  const tags = { shown: all.slice(0, max), more: Math.max(0, all.length - max), hidden: all.slice(max).map((x) => (x.loader ? LOADER_NAME[x.loader] : x.category)).join(', ') };
   return (
     <div className="mr-card mr-result" role="link" tabIndex={0} onClick={onOpen} onKeyDown={(e) => e.key === 'Enter' && onOpen()}>
       {p.icon ? <img className="mr-result-icon" src={p.icon} alt="" loading="lazy" draggable={false} /> : <span className="mr-result-icon ph"><Icon name={TYPE_ICON[p.type] || 'box'} size={36} /></span>}
@@ -88,27 +94,39 @@ function ResultCard({ p, instance, installed, busy, onInstall, onOpen, issue }) 
           </span>
         ) : null}
         {updated ? (
-          <small>
+          // only how long ago, as Modrinth's list does ("Updated …" in its tooltip)
+          <small data-tip={t('Actualizado {when}', { when: timeAgo(updated).toLowerCase() })}>
             <Icon name="history" size={14} />
-            {t('Actualizado {when}', { when: timeAgo(updated).toLowerCase() })}
+            {timeAgo(updated)}
           </small>
         ) : null}
       </div>
       <div className="mr-result-tags">
         <BrandLogo brand={p.source} size={16} />
-        {(p.categories || []).slice(0, 4).map((c) => (
-          <span key={c} className="mr-tag">
-            {c}
+        {env ? (
+          // where it goes: in the game, on the server, or on both (like Modrinth's own list)
+          <span className="mr-tag env" data-tip={env.tip}>
+            <Icon name={env.icon} size={16} />
+            {env.short}
           </span>
-        ))}
-        {(p.loaders || [])
-          .filter((l) => LOADER_NAME[l])
-          .slice(0, 3)
-          .map((l) => (
-            <span key={l} className="mr-tag loader">
-              {LOADER_NAME[l]}
+        ) : null}
+        {tags.shown.map((x) =>
+          x.loader ? (
+            <span key={`l:${x.loader}`} className={`mr-tag loader loader-${x.loader}`}>
+              <LoaderIcon loader={x.loader} size={16} />
+              {LOADER_NAME[x.loader]}
             </span>
-          ))}
+          ) : (
+            <span key={`c:${x.category}`} className="mr-tag">
+              {x.category}
+            </span>
+          ),
+        )}
+        {tags.more ? (
+          <span className="mr-tag" data-tip={tags.hidden}>
+            +{tags.more}
+          </span>
+        ) : null}
       </div>
     </div>
   );

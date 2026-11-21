@@ -8,6 +8,7 @@ const crypto = require('node:crypto');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { currentSignal, throwIfCancelled, cancelledError } = require('./cancel');
+const { UserError } = require('../../shared/usertext');
 
 // eslint-disable-next-line no-undef
 const USER_AGENT = `HaviHub/${typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.0'} (Minecraft launcher)`;
@@ -29,8 +30,58 @@ function getFetch() {
 }
 
 // For tests
+let customFetch = false;
 function setFetch(fn) {
   fetchImpl = fn;
+  customFetch = Boolean(fn);
+}
+
+// One request that does not follow a redirect: a 3xx comes back as it is,
+// with its Location. Electron's net.fetch cannot do this (with
+// redirect: 'manual' it fails with "Redirect was cancelled"), so in Electron
+// it goes through net.request, which reports each redirect and lets it be
+// stopped there.
+function fetchNoRedirect(url, { method, headers, body, signal }) {
+  let net = null;
+  try {
+    const electron = customFetch ? null : require('electron');
+    if (electron && typeof electron === 'object' && electron.net && typeof electron.net.request === 'function') net = electron.net;
+  } catch {
+    /* not in electron */
+  }
+  if (!net) return getFetch()(url, { method, headers, body, signal, redirect: 'manual' });
+  return new Promise((resolve, reject) => {
+    const req = net.request({ url, method, redirect: 'manual' });
+    for (const [k, v] of Object.entries(headers || {})) req.setHeader(k, v);
+    let settled = false;
+    const settle = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      if (signal) signal.removeEventListener('abort', onAbort);
+      fn(value);
+    };
+    const onAbort = () => {
+      req.abort();
+      settle(reject, Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+    };
+    if (signal) {
+      if (signal.aborted) return onAbort();
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+    req.on('redirect', (status, _method, location) => {
+      settle(resolve, new Response(null, { status, headers: { location } }));
+      req.abort();
+    });
+    req.on('response', (res) => {
+      const h = new Headers();
+      for (const [k, v] of Object.entries(res.headers || {})) for (const x of [].concat(v)) h.append(k, String(x));
+      const empty = method === 'HEAD' || [204, 205, 304].includes(res.statusCode);
+      settle(resolve, new Response(empty ? null : Readable.toWeb(res), { status: res.statusCode, headers: h }));
+    });
+    req.on('error', (e) => settle(reject, e));
+    if (body !== undefined && body !== null) req.write(body);
+    req.end();
+  });
 }
 
 // Rules for particular servers: extra headers (CurseForge's file servers ask
@@ -77,13 +128,14 @@ async function request(url, { method = 'GET', headers = {}, body, json, timeout 
     try {
       let res;
       const extra = redirect ? null : extraHeaders(url);
-      if (!extra) res = await getFetch()(url, { method, headers: h, body: payload, signal: ctrl.signal, ...(redirect ? { redirect } : {}) });
+      if (redirect === 'manual') res = await fetchNoRedirect(url, { method, headers: h, body: payload, signal: ctrl.signal });
+      else if (!extra) res = await getFetch()(url, { method, headers: h, body: payload, signal: ctrl.signal, ...(redirect ? { redirect } : {}) });
       else {
         // A request that carries a server's own headers follows redirects itself,
         // so that those headers reach that server and no other.
         let at = url;
         for (let hop = 0; ; hop++) {
-          res = await getFetch()(at, { method, headers: { ...h, ...(extraHeaders(at) || {}) }, body: payload, signal: ctrl.signal, redirect: 'manual' });
+          res = await fetchNoRedirect(at, { method, headers: { ...h, ...(extraHeaders(at) || {}) }, body: payload, signal: ctrl.signal });
           const to = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
           if (!to) break;
           if (hop >= 8) throw new HttpError(res.status, url, 'too many redirects');
@@ -114,7 +166,7 @@ async function request(url, { method = 'GET', headers = {}, body, json, timeout 
       }
     }
   }
-  const err = new Error(`No se pudo conectar: ${url} (${lastErr && lastErr.message})`);
+  const err = new UserError('No se pudo conectar: {url} ({reason})', { url, reason: lastErr && lastErr.message });
   err.code = 'NETWORK';
   throw err;
 }
@@ -148,7 +200,7 @@ async function download(url, dest, { onProgress, hash, hashAlgo = 'sha1', header
     if (hash) {
       const hasher = crypto.createHash(hashAlgo);
       await pipeline(fs.createReadStream(src), hasher);
-      if (hasher.digest('hex').toLowerCase() !== String(hash).toLowerCase()) throw Object.assign(new Error(`El archivo no coincide con su hash (${path.basename(dest)})`), { code: 'HASH_MISMATCH' });
+      if (hasher.digest('hex').toLowerCase() !== String(hash).toLowerCase()) throw new UserError('El archivo no coincide con su hash ({file})', { file: path.basename(dest) }, { code: 'HASH_MISMATCH' });
     }
     await fsp.rm(dest, { force: true });
     await fsp.copyFile(src, dest);
@@ -180,7 +232,7 @@ async function download(url, dest, { onProgress, hash, hashAlgo = 'sha1', header
     const got = hasher.digest('hex');
     if (got.toLowerCase() !== String(hash).toLowerCase()) {
       await fsp.rm(tmp, { force: true });
-      const err = new Error(`El archivo descargado no coincide con su hash (${path.basename(dest)})`);
+      const err = new UserError('El archivo descargado no coincide con su hash ({file})', { file: path.basename(dest) });
       err.code = 'HASH_MISMATCH';
       throw err;
     }

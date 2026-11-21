@@ -3,6 +3,7 @@
 // _minecraft._tcp SRV record when the address has no port.
 const net = require('node:net');
 const dns = require('node:dns').promises;
+const { UserError } = require('../shared/usertext');
 
 function varint(n) {
   const out = [];
@@ -49,7 +50,7 @@ function parseAddress(address) {
 
 async function resolve(address) {
   const p = parseAddress(address);
-  if (!p) throw new Error('Dirección no válida');
+  if (!p) throw new UserError('Dirección no válida');
   if (p.port || net.isIP(p.host)) return { host: p.host, port: p.port || 25565 };
   try {
     const srv = await dns.resolveSrv(`_minecraft._tcp.${p.host}`);
@@ -100,9 +101,9 @@ async function ping(address, { timeout = 3500 } = {}) {
       else resolveP(value);
     };
     // some servers answer the status but never the ping: their status time counts
-    const timer = setTimeout(() => (status ? done(null, result(statusRtt)) : done(new Error('Sin respuesta'))), timeout);
+    const timer = setTimeout(() => (status ? done(null, result(statusRtt)) : done(new UserError('Sin respuesta'))), timeout);
     sock.on('error', (e) => (status ? done(null, result(statusRtt)) : done(e)));
-    sock.on('close', () => (status ? done(null, result(statusRtt)) : done(new Error('Conexión cerrada'))));
+    sock.on('close', () => (status ? done(null, result(statusRtt)) : done(new UserError('Conexión cerrada'))));
     sock.on('connect', () => {
       const portBuf = Buffer.alloc(2);
       portBuf.writeUInt16BE(port);
@@ -124,7 +125,7 @@ async function ping(address, { timeout = 3500 } = {}) {
           try {
             status = JSON.parse(json);
           } catch {
-            return done(new Error('Respuesta no válida'));
+            return done(new UserError('Respuesta no válida'));
           }
           statusRtt = Date.now() - askedAt;
           const payload = Buffer.alloc(8);

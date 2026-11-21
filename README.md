@@ -75,7 +75,7 @@ To play you need a Microsoft account that owns Minecraft Java Edition. On its fi
 
 ## How it works
 
-Prism Launcher is not included in the installers. On its first start, Havi Hub downloads the official portable build from the [Prism Launcher releases](https://github.com/PrismLauncher/PrismLauncher/releases), checks it against the SHA-256 checksum published by GitHub, and keeps it up to date from then on. Before using it, Havi Hub replaces the name, logo and sign-in confirmation page that the engine shows, so that its windows match the rest of the app. That change is entirely contained in [`src/main/engine-brand.js`](src/main/engine-brand.js).
+Prism Launcher is not included in the installers. On its first start, Havi Hub downloads the official portable build from the [Prism Launcher releases](https://github.com/PrismLauncher/PrismLauncher/releases), checks it against the SHA-256 checksum published by GitHub, and keeps it up to date from then on, up to the newest release Havi Hub has been tested with (`TESTED_VERSION` in [`src/main/engine.js`](src/main/engine.js)): a newer Prism Launcher is installed once a Havi Hub update says it works. Before using it, Havi Hub replaces the name, logo and sign-in confirmation page that the engine shows, so that its windows match the rest of the app. That change is entirely contained in [`src/main/engine-brand.js`](src/main/engine-brand.js).
 
 Pictures and sounds from the game (the Minecraft logo, blocks, items, skins) are read from the Minecraft files on your computer. If the game has not been downloaded yet, Havi Hub fetches its client file once from Mojang's servers. None of Mojang's images or sounds are included in this repository or in the installers.
 

@@ -3,6 +3,15 @@
 // their downloads and copies stop (see util/cancel.js) and the cleanup
 // functions they registered undo what was left half done.
 const { runInTask, cancelledError } = require('./util/cancel');
+const { plain, textOf, tr } = require('../shared/usertext');
+
+// title, detail and error are kept as Spanish text (as always) and as the
+// template the interface translates (titleText, detailText, errorText; see
+// shared/usertext.js)
+function setText(t, field, value) {
+  t[field] = value === null ? null : plain(value);
+  t[`${field}Text`] = value === null || value === undefined || value === '' ? null : textOf(value);
+}
 
 let nextId = 1;
 
@@ -26,7 +35,10 @@ class TaskManager {
   // cancelable: false for work that must not stop half way (moving folders)
   create(title, { kind = 'generic', instanceId = null, cancelable = true } = {}) {
     const id = nextId++;
-    const t = { id, title, kind, instanceId, progress: 0, status: 'running', detail: '', startedAt: Date.now(), error: null, cancelable };
+    const t = { id, title: '', kind, instanceId, progress: 0, status: 'running', detail: '', startedAt: Date.now(), error: null, cancelable };
+    setText(t, 'title', title);
+    setText(t, 'detail', '');
+    setText(t, 'error', null);
     const controller = new AbortController();
     const ctl = { controller, cleanups: [], settled: null };
     let settle;
@@ -50,19 +62,26 @@ class TaskManager {
       // undo half-done work if the task is cancelled
       onCancel: (fn) => ctl.cleanups.push(fn),
       set: (patch) => {
-        Object.assign(t, patch);
+        const p = { ...patch };
+        for (const f of ['title', 'detail']) {
+          if (f in p) {
+            setText(t, f, p[f]);
+            delete p[f];
+          }
+        }
+        Object.assign(t, p);
         this.schedule();
       },
       progress: (p, detail) => {
         t.progress = Math.max(0, Math.min(1, p));
-        if (detail !== undefined) t.detail = detail;
+        if (detail !== undefined) setText(t, 'detail', detail);
         this.schedule();
       },
       done: (detail) => {
         if (t.status !== 'running') return finish();
         t.status = 'done';
         t.progress = 1;
-        if (detail !== undefined) t.detail = detail;
+        if (detail !== undefined) setText(t, 'detail', detail);
         t.finishedAt = Date.now();
         this.flush();
         this.cleanup();
@@ -72,8 +91,8 @@ class TaskManager {
         if (t.status === 'running') {
           const cancelled = controller.signal.aborted || (err && err.code === 'CANCELLED');
           t.status = cancelled ? 'cancelled' : 'error';
-          t.error = cancelled ? null : String((err && err.message) || err);
-          t.detail = cancelled ? 'Cancelado' : t.detail;
+          setText(t, 'error', cancelled ? null : err && err.message ? err : String(err));
+          if (cancelled) setText(t, 'detail', tr('Cancelado'));
           t.finishedAt = Date.now();
           this.flush();
           this.cleanup();
@@ -113,7 +132,7 @@ class TaskManager {
     if (!t || !ctl || t.status !== 'running' || !t.cancelable) return false;
     ctl.controller.abort();
     t.status = 'cancelled';
-    t.detail = 'Cancelado';
+    setText(t, 'detail', tr('Cancelado'));
     t.finishedAt = Date.now();
     this.flush();
     // wait a little for the work to notice, then undo what it left

@@ -8,7 +8,7 @@ import { Button, Checkbox, Spinner, Select, Progress } from '../components/ui.js
 import InstanceImage, { LoaderIcon } from '../components/InstanceImage.jsx';
 import { useApp } from '../lib/store.jsx';
 import { call } from '../lib/api.js';
-import { t } from '../lib/i18n.js';
+import { t, tm } from '../lib/i18n.js';
 
 export default function SharePrismDialog({ onResolve }) {
   const app = useApp();
@@ -156,7 +156,7 @@ export default function SharePrismDialog({ onResolve }) {
       {running && task ? (
         <div className="import-progress">
           <Progress value={task.progress} indeterminate={!task.progress} />
-          <small className="muted">{task.detail}</small>
+          <small className="muted">{tm(task.detail, task.detailText)}</small>
         </div>
       ) : null}
     </Modal>

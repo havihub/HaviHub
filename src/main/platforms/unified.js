@@ -17,6 +17,7 @@ const { Worlds } = require('../prism/worlds');
 const KIND_BY_TYPE = { mod: 'mods', resourcepack: 'resourcepacks', shader: 'shaderpacks', datapack: 'datapacks' };
 const { modLoadersFor, versionCompatible, typeAllowed, TYPE_OF_KIND } = require('../../shared/compat.js');
 const { alternativeUrl, blockedEntry } = require('./blocked');
+const { UserError, tr } = require('../../shared/usertext');
 const RANK = { release: 0, beta: 1, alpha: 2 };
 
 // ---------- helpers ----------
@@ -142,7 +143,7 @@ function withDeadline(p, ms) {
   return Promise.race([
     p,
     new Promise((_, reject) => {
-      timer = setTimeout(() => reject(Object.assign(new Error('El servicio tarda demasiado en responder'), { code: 'SLOW' })), ms);
+      timer = setTimeout(() => reject(new UserError('El servicio tarda demasiado en responder', null, { code: 'SLOW' })), ms);
     }),
   ]).finally(() => clearTimeout(timer));
 }
@@ -315,7 +316,7 @@ class Platforms {
     if (!typeAllowed(instance, type)) {
       throw Object.assign(new Error(type === 'shader' ? 'Este perfil es vanilla: los shaders necesitan Iris u OptiFine, que funcionan con un cargador de mods.' : 'Este perfil es vanilla: para usar mods, cambia su versión a una con Fabric, Forge, NeoForge o Quilt.'), { code: 'VANILLA' });
     }
-    return this.tasks.run(`Instalando ${title || projectId}`, { kind: 'install', instanceId }, async (task) => {
+    return this.tasks.run(tr('Instalando {name}', { name: title || projectId }), { kind: 'install', instanceId }, async (task) => {
       const result = { installed: [], skipped: [], blocked: [], failed: [] };
       const seen = new Set();
       await this.installOne({ source, projectId, versionId, instance, kind, world, title, result, seen, task, isDep: false });
@@ -326,10 +327,10 @@ class Platforms {
 
   // CurseForge "Worlds": the file is a zip with the world; it goes to saves/
   async installWorld({ source, projectId, versionId, instanceId, title }) {
-    if (source !== 'curseforge') throw new Error('Los mundos solo están en CurseForge.');
+    if (source !== 'curseforge') throw new UserError('Los mundos solo están en CurseForge.');
     const instance = await this.instances.get(instanceId);
     const worlds = new Worlds(this.instances);
-    return this.tasks.run(`Instalando ${title || projectId}`, { kind: 'install', instanceId }, async (task) => {
+    return this.tasks.run(tr('Instalando {name}', { name: title || projectId }), { kind: 'install', instanceId }, async (task) => {
       const result = { installed: [], skipped: [], blocked: [], failed: [] };
       let version;
       if (versionId) version = await curseforge.file(projectId, versionId);
@@ -340,7 +341,7 @@ class Platforms {
       }
       const file = version && (version.files.find((f) => f.primary) || version.files[0]);
       if (!file) {
-        result.failed.push({ title: title || projectId, reason: 'No hay un archivo para descargar' });
+        result.failed.push({ title: title || projectId, reason: tr('No hay un archivo para descargar') });
         return result;
       }
       let proj = null;
@@ -359,13 +360,13 @@ class Platforms {
       const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'havihub-world-'));
       try {
         const zipPath = path.join(tmp, /\.zip$/i.test(file.filename) ? file.filename : `${file.filename}.zip`);
-        task.progress(0, `Descargando ${file.filename}`);
+        task.progress(0, tr('Descargando {file}', { file: file.filename }));
         await http.download(fileUrl, zipPath, {
           hash: file.hashes.sha1 || undefined,
           hashAlgo: 'sha1',
           onProgress: (r, t) => task.progress(t ? r / t : 0, `${file.filename} (${Math.round(r / 1024)} KB)`),
         });
-        task.progress(1, 'Descomprimiendo el mundo…');
+        task.progress(1, tr('Descomprimiendo el mundo…'));
         const folder = await worlds.importZip(instance.id, zipPath);
         result.installed.push({ title: projTitle, fileName: folder, version: version.versionNumber, isDep: false });
       } catch (e) {
@@ -405,21 +406,21 @@ class Platforms {
     if (versionId) version = source === 'curseforge' ? await curseforge.file(projectId, versionId) : await modrinth.version(versionId);
     else version = await this.bestVersion(source, projectId, instance, kind);
     if (!version) {
-      result.failed.push({ title: title || projectId, reason: `No hay una versión compatible con ${instance.mcVersion}${instance.loader ? ' / ' + instance.loader.name : ''}` });
+      result.failed.push({ title: title || projectId, reason: tr('No hay una versión compatible con {version}', { version: `${instance.mcVersion}${instance.loader ? ' / ' + instance.loader.name : ''}` }) });
       return;
     }
     if (existing && existing.fileId === String(version.id) && !replaceFile) {
-      result.skipped.push({ title: title || existing.name, reason: 'Ya está instalado' });
+      result.skipped.push({ title: title || existing.name, reason: tr('Ya está instalado') });
       return;
     }
 
     const file = version.files.find((f) => f.primary) || version.files[0];
     if (!file) {
-      result.failed.push({ title: title || projectId, reason: 'La versión no tiene archivos' });
+      result.failed.push({ title: title || projectId, reason: tr('La versión no tiene archivos') });
       return;
     }
     if (!isPlainFileName(file.filename)) {
-      result.failed.push({ title: title || projectId, reason: 'El nombre del archivo no es válido' });
+      result.failed.push({ title: title || projectId, reason: tr('El nombre del archivo no es válido') });
       return;
     }
 
@@ -462,7 +463,7 @@ class Platforms {
     if (existing) await fsp.rm(existing.metaFile, { force: true });
 
     const dest = await resolveInside(idx.folder, file.filename + (wasDisabled ? '.disabled' : ''));
-    task.progress(0, `Descargando ${file.filename}`);
+    task.progress(0, tr('Descargando {file}', { file: file.filename }));
     const hashAlgo = file.hashes.sha512 ? 'sha512' : file.hashes.sha1 ? 'sha1' : null;
     await http.download(fileUrl, dest, {
       hash: hashAlgo ? file.hashes[hashAlgo] : undefined,
@@ -651,7 +652,7 @@ class Platforms {
     } catch {
       /* only a convenience */
     }
-    return this.tasks.run(`Actualizando ${baseName}`, { kind: 'update', instanceId }, async (task) => {
+    return this.tasks.run(tr('Actualizando {name}', { name: baseName }), { kind: 'update', instanceId }, async (task) => {
       const result = { installed: [], skipped: [], blocked: [], failed: [] };
       // keep disabled state: rename back after install if it was disabled
       const wasDisabled = fileName.toLowerCase().endsWith('.disabled');
@@ -676,7 +677,7 @@ class Platforms {
   async identify(instanceId, kind, fileName, { world } = {}) {
     const { items } = await this.content.list(instanceId, kind, { world });
     const it = items.find((i) => i.fileName === fileName);
-    if (!it) throw new Error('Ese archivo ya no está en el perfil');
+    if (!it) throw new UserError('Ese archivo ya no está en el perfil');
     if (it.meta && it.meta.provider && it.meta.projectId) return { source: it.meta.provider, projectId: String(it.meta.projectId), versionId: String(it.meta.fileId || ''), versionNumber: it.meta.versionNumber || it.version || '', item: it };
     const cached = this.cachedUpdates(instanceId, kind, world);
     if (cached && cached.identified && cached.identified[fileName]) return { ...cached.identified[fileName], projectId: String(cached.identified[fileName].projectId), versionId: String(cached.identified[fileName].versionId), item: it };
@@ -736,7 +737,7 @@ class Platforms {
   async versionsFor(instanceId, kind, fileName, { world, all = false } = {}) {
     const instance = await this.instances.get(instanceId);
     const id = await this.identify(instanceId, kind, fileName, { world });
-    if (!id) throw Object.assign(new Error('No encontré este archivo en CurseForge ni en Modrinth: se agregó a mano, así que no tiene otras versiones para elegir.'), { code: 'UNKNOWN_FILE' });
+    if (!id) throw Object.assign(new UserError('No encontré este archivo en CurseForge ni en Modrinth: se agregó a mano, así que no tiene otras versiones para elegir.'), { code: 'UNKNOWN_FILE' });
     let versions = await this.projectVersions(id.source, id.projectId, instance, kind, { all });
     // the installed version is always in the list, compatible or not
     if (id.versionId && !versions.some((v) => String(v.id) === id.versionId)) {

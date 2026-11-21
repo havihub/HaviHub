@@ -5,6 +5,7 @@
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { UserError } = require('../shared/usertext');
 
 class Thumbs {
   constructor(cacheDir, nativeImage) {
@@ -97,7 +98,7 @@ class Thumbs {
       this.queue = this.queue.then(decode, decode);
       img = await this.queue;
     }
-    if (!img || img.isEmpty()) throw new Error('No se pudo leer la imagen');
+    if (!img || img.isEmpty()) throw new UserError('No se pudo leer la imagen');
     const buf = img.toJPEG(84);
     await fsp.mkdir(path.dirname(out), { recursive: true });
     await fsp.writeFile(out, buf).catch(() => {});

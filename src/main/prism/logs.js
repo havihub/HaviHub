@@ -9,6 +9,7 @@ const { gameDirOf } = require('./instances');
 const zip = require('../util/zip');
 const http = require('../util/http');
 const { fileUrl } = require('../urls');
+const { UserError } = require('../../shared/usertext');
 
 const MAX_BYTES = 6 * 1024 * 1024;
 
@@ -51,7 +52,7 @@ class Logs {
   async read(id, rel) {
     const game = gameDirOf(await this.instances.locate(id));
     const file = path.resolve(game, rel || 'logs/latest.log');
-    if (!file.startsWith(path.resolve(game))) throw new Error('Ruta inválida');
+    if (!file.startsWith(path.resolve(game))) throw new UserError('Ruta inválida');
     const st = await statSafe(file);
     if (!st) return { text: '', truncated: false, size: 0, path: file };
     let buf;

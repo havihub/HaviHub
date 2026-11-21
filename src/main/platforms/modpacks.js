@@ -14,8 +14,32 @@ const { safeName, uniqueDirName, exists, writeJson, readJson } = require('../uti
 const { gameDirOf, LOADER_UIDS } = require('../prism/instances');
 const { writeMetadata, readMetadata } = require('../prism/content');
 const { safeRelPath, resolveInside, resolveRelInside } = require('../util/safepath');
+const { riskyLaunchSettings, dropLaunchSettings, personalSettings, dropPersonalSettings } = require('../prism/launchsettings');
+const { UserError, tr } = require('../../shared/usertext');
 
 const MR_DEP_TO_LOADER = { 'fabric-loader': 'fabric', 'quilt-loader': 'quilt', forge: 'forge', neoforge: 'neoforge' };
+
+// One file of a .mrpack. Its addresses come from the pack itself, so only
+// HTTPS ones are used, as Modrinth's format asks: a file: address would copy
+// any file of this computer into the profile (and on Windows, file://server/…
+// would connect to that server with the person's credentials). The addresses
+// are mirrors, tried in order, and the strongest hash the pack gives decides.
+async function downloadPackFile(f, dest) {
+  const urls = (Array.isArray(f.downloads) ? f.downloads : []).filter((u) => typeof u === 'string' && /^https:\/\//i.test(u));
+  if (!urls.length) throw new UserError('El modpack no indica una dirección HTTPS para este archivo');
+  const hashes = f.hashes || {};
+  const check = hashes.sha512 ? { hash: hashes.sha512, hashAlgo: 'sha512' } : hashes.sha1 ? { hash: hashes.sha1, hashAlgo: 'sha1' } : {};
+  let lastError;
+  for (const url of urls) {
+    try {
+      return await http.download(url, dest, check);
+    } catch (e) {
+      if (e && e.code === 'CANCELLED') throw e;
+      lastError = e;
+    }
+  }
+  throw lastError;
+}
 
 class Modpacks {
   constructor({ ctxProvider, instances, tasks, appConfig, emit }) {
@@ -42,24 +66,24 @@ class Modpacks {
 
   // ---------- install from platforms ----------
   async install({ source, projectId, versionId, name, group, icon }) {
-    return this.tasks.run(`Instalando modpack ${name || ''}`.trim(), { kind: 'modpack' }, async (task) => {
+    return this.tasks.run(name ? tr('Instalando modpack {name}', { name }) : tr('Instalando modpack'), { kind: 'modpack' }, async (task) => {
       if (source === 'curseforge') {
         const file = versionId ? await curseforge.file(projectId, versionId) : (await curseforge.files(projectId, { pageSize: 20 })).sort((a, b) => Date.parse(b.date) - Date.parse(a.date))[0];
-        if (!file) throw new Error('No se encontró una versión del modpack');
+        if (!file) throw new UserError('No se encontró una versión del modpack');
         const f = file.files[0];
-        if (!f.url) throw new Error('El autor de este modpack no permite descargarlo desde otras apps. Descárgalo desde CurseForge e impórtalo.');
+        if (!f.url) throw new UserError('El autor de este modpack no permite descargarlo desde otras apps. Descárgalo desde CurseForge e impórtalo.');
         const tmp = await this.tempFile(f.filename);
-        task.progress(0, 'Descargando modpack…');
-        await http.download(f.url, tmp, { onProgress: (r, t) => task.progress(t ? (r / t) * 0.2 : 0, 'Descargando modpack…') });
+        task.progress(0, tr('Descargando modpack…'));
+        await http.download(f.url, tmp, { onProgress: (r, t) => task.progress(t ? (r / t) * 0.2 : 0, tr('Descargando modpack…')) });
         return this.installCurseZip(tmp, { task, name, group, icon, managed: { id: projectId, versionId: file.id, versionName: file.name } });
       }
       const versions = versionId ? [await modrinth.version(versionId)] : await modrinth.versions(projectId, {});
       const v = versions.sort((a, b) => Date.parse(b.date) - Date.parse(a.date))[0];
-      if (!v) throw new Error('No se encontró una versión del modpack');
+      if (!v) throw new UserError('No se encontró una versión del modpack');
       const f = v.files.find((x) => x.primary) || v.files[0];
       const tmp = await this.tempFile(f.filename);
-      task.progress(0, 'Descargando modpack…');
-      await http.download(f.url, tmp, { hash: f.hashes.sha1, hashAlgo: 'sha1', onProgress: (r, t) => task.progress(t ? (r / t) * 0.2 : 0, 'Descargando modpack…') });
+      task.progress(0, tr('Descargando modpack…'));
+      await http.download(f.url, tmp, { hash: f.hashes.sha1, hashAlgo: 'sha1', onProgress: (r, t) => task.progress(t ? (r / t) * 0.2 : 0, tr('Descargando modpack…')) });
       return this.installMrpack(tmp, { task, name, group, icon, managed: { id: projectId, versionId: v.id, versionName: v.versionNumber } });
     });
   }
@@ -80,7 +104,7 @@ class Modpacks {
 
   async installMrpack(file, { task, name, group, icon, managed } = {}) {
     const idxBuf = await zip.readEntry(file, 'modrinth.index.json');
-    if (!idxBuf) throw new Error('El archivo no es un modpack de Modrinth válido');
+    if (!idxBuf) throw new UserError('El archivo no es un modpack de Modrinth válido');
     const index = JSON.parse(idxBuf.toString('utf8'));
     const deps = index.dependencies || {};
     let loader = null;
@@ -119,22 +143,22 @@ class Modpacks {
       await http.pool(files, 6, async (f) => {
         const rel = safeRelPath(f.path);
         if (!rel) return;
-        const url = (f.downloads || [])[0];
         try {
           const dest = await resolveRelInside(game, rel);
-          await http.download(url, dest, { hash: f.hashes && f.hashes.sha1, hashAlgo: 'sha1' });
+          await downloadPackFile(f, dest);
         } catch (e) {
           failed.push({ title: rel, reason: e.message });
         }
         done++;
-        if (task) task.progress(0.2 + 0.7 * (done / files.length), `Descargando archivos (${done}/${files.length})`);
+        if (task) task.progress(0.2 + 0.7 * (done / files.length), tr('Descargando archivos ({done}/{total})', { done, total: files.length }));
       });
-      if (task) task.progress(0.92, 'Copiando configuración…');
+      if (task) task.progress(0.92, tr('Copiando configuración…'));
       await zip.extractPrefix(file, 'overrides/', game);
       await zip.extractPrefix(file, 'client-overrides/', game);
       await this.instances.writeDefaultOptions(game);
+      const keys = await this.packKeys(id, file, ['overrides/', 'client-overrides/'], packName);
       this.emit('instances:changed', {});
-      return { id, failed, blocked: [] };
+      return { id, failed, blocked: [], keys };
     } catch (e) {
       e.instanceId = id;
       throw e;
@@ -143,7 +167,7 @@ class Modpacks {
 
   async installCurseZip(file, { task, name, group, icon, managed } = {}) {
     const mBuf = await zip.readEntry(file, 'manifest.json');
-    if (!mBuf) throw new Error('El archivo no es un modpack de CurseForge válido');
+    if (!mBuf) throw new UserError('El archivo no es un modpack de CurseForge válido');
     const manifest = JSON.parse(mBuf.toString('utf8'));
     const mc = manifest.minecraft || {};
     let loader = null;
@@ -183,9 +207,9 @@ class Modpacks {
     const entries = (manifest.files || []).filter((f) => f.required !== false);
     if (entries.length) {
       if (!curseforge.hasKey()) {
-        failed.push({ title: `${entries.length} archivos`, reason: 'Falta la API key de CurseForge para descargar los mods del modpack' });
+        failed.push({ title: tr('{n} archivos', { n: entries.length }), reason: tr('Falta la API key de CurseForge para descargar los mods del modpack') });
       } else {
-        if (task) task.progress(0.22, 'Resolviendo archivos…');
+        if (task) task.progress(0.22, tr('Resolviendo archivos…'));
         const files = [];
         for (let i = 0; i < entries.length; i += 500) files.push(...(await curseforge.filesByIds(entries.slice(i, i + 500).map((e) => e.fileID))));
         const mods = [];
@@ -210,57 +234,112 @@ class Modpacks {
             }
           }
           done++;
-          if (task) task.progress(0.25 + 0.65 * (done / files.length), `Descargando mods (${done}/${files.length})`);
+          if (task) task.progress(0.25 + 0.65 * (done / files.length), tr('Descargando mods ({done}/{total})', { done, total: files.length }));
         });
       }
     }
-    if (task) task.progress(0.92, 'Copiando configuración…');
+    if (task) task.progress(0.92, tr('Copiando configuración…'));
     const overrides = (manifest.overrides || 'overrides').replace(/\/?$/, '/');
     await zip.extractPrefix(file, overrides, game);
     await this.instances.writeDefaultOptions(game);
+    const keys = await this.packKeys(id, file, [overrides], packName);
     this.emit('instances:changed', {});
-    return { id, blocked, failed };
+    return { id, blocked, failed, keys };
   }
 
   // ---------- import local archives ----------
-  async importArchive(file, { group } = {}) {
+  // Key bindings of a freshly installed modpack. Havi Hub writes the
+  // person's own (Ajustes → Minecraft → Teclas) when it creates the profile,
+  // but a pack that brings its own options.txt replaces that file. If that
+  // file has key bindings (chosen by the pack's author so its mods don't
+  // clash), the person chooses whose to use: 'ask' here, then the
+  // 'modpack:keys' event; the page answers with instances.applyKeysTo.
+  // Otherwise the person's are applied on top of the pack's other options.
+  async packKeys(id, file, prefixes, name) {
+    if (!this.instances.hasCustomKeys()) return null;
+    const names = await zip.listEntries(file);
+    if (!prefixes.some((p) => names.includes(`${p}options.txt`))) return null;
+    const inst = await this.instances.get(id);
+    const text = await fsp.readFile(path.join(gameDirOf(inst.root), 'options.txt'), 'utf8').catch(() => '');
+    if (!/^key_/m.test(text)) {
+      await this.instances.applyKeysTo(id);
+      return 'applied';
+    }
+    this.emit('modpack:keys', { id, name: name || inst.name });
+    return 'ask';
+  }
+
+  // The settings of a Prism instance in this archive that would run something
+  // on this computer (prism/launchsettings.js); [] for anything else.
+  async archiveLaunchSettings(file) {
+    const names = await zip.listEntries(file);
+    if (names.includes('modrinth.index.json') || names.includes('manifest.json')) return [];
+    const cfgEntry = names.filter((n) => /(^|\/)instance\.cfg$/.test(n)).sort((a, b) => a.length - b.length)[0];
+    const buf = cfgEntry ? await zip.readEntry(file, cfgEntry) : null;
+    if (!buf) return [];
+    let text = buf.toString('utf8');
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+    return riskyLaunchSettings(new IniFile(text));
+  }
+
+  // launchSettings: 'keep' to keep what archiveLaunchSettings found (the
+  // person chose so); otherwise it is taken out.
+  async importArchive(file, { group, launchSettings } = {}) {
     const names = await zip.listEntries(file);
     if (names.includes('modrinth.index.json')) {
-      return this.tasks.run(`Importando ${path.basename(file)}`, { kind: 'modpack' }, (task) => this.installMrpack(file, { task, group }));
+      return this.tasks.run(tr('Importando {file}', { file: path.basename(file) }), { kind: 'modpack' }, (task) => this.installMrpack(file, { task, group }));
     }
     if (names.includes('manifest.json')) {
-      return this.tasks.run(`Importando ${path.basename(file)}`, { kind: 'modpack' }, (task) => this.installCurseZip(file, { task, group }));
+      return this.tasks.run(tr('Importando {file}', { file: path.basename(file) }), { kind: 'modpack' }, (task) => this.installCurseZip(file, { task, group }));
     }
     const cfgEntry = names.filter((n) => /(^|\/)instance\.cfg$/.test(n)).sort((a, b) => a.length - b.length)[0];
     if (cfgEntry) {
-      return this.tasks.run(`Importando ${path.basename(file)}`, { kind: 'import' }, async (task) => {
+      return this.tasks.run(tr('Importando {file}', { file: path.basename(file) }), { kind: 'import' }, async (task) => {
         const prefix = cfgEntry.slice(0, cfgEntry.length - 'instance.cfg'.length);
         const ctx = this.ctxProvider();
         const { primaryInstanceDir } = await ctx.dirs();
         const base = prefix ? prefix.replace(/\/$/, '').split('/').pop() : path.basename(file).replace(/\.zip$/i, '');
         const id = await uniqueDirName(primaryInstanceDir, safeName(base));
-        task.progress(0.1, 'Extrayendo…');
+        task.progress(0.1, tr('Extrayendo…'));
         await zip.extractPrefix(file, prefix, path.join(primaryInstanceDir, id));
         const cfg = await IniFile.load(path.join(primaryInstanceDir, id, 'instance.cfg'));
         cfg.remove('uuid');
+        // what would run something on this computer stays only if the person said so
+        if (launchSettings !== 'keep') dropLaunchSettings(cfg);
         await cfg.save();
         if (group) await this.instances.setGroup(id, group);
         this.emit('instances:changed', {});
         return { id, blocked: [], failed: [] };
       });
     }
-    throw new Error('No reconozco este archivo. Usa un .mrpack, un modpack de CurseForge (.zip) o una instancia exportada de Prism (.zip).');
+    throw new UserError('No reconozco este archivo. Usa un .mrpack, un modpack de CurseForge (.zip) o una instancia exportada de Prism (.zip).');
   }
 
   // ---------- export ----------
-  async exportZip(id, dest, { includeWorlds = true, includeScreenshots = false } = {}) {
+  // What exportZip leaves out unless asked (personalSettings in launchsettings.js)
+  async exportSettings(id) {
+    const root = await this.instances.locate(id);
+    const cfg = await IniFile.load(path.join(root, 'instance.cfg')).catch(() => null);
+    return cfg ? personalSettings(cfg) : [];
+  }
+
+  // personalSettings: 'keep' to share this computer's commands, Java and
+  // variables as they are; otherwise the exported instance.cfg goes without them
+  async exportZip(id, dest, { includeWorlds = true, includeScreenshots = false, personalSettings: personal = 'drop' } = {}) {
     const root = await this.instances.locate(id);
     const gameRel = path.relative(root, gameDirOf(root)).split(path.sep).join('/');
     const skip = [`${gameRel}/logs`, `${gameRel}/crash-reports`, 'natives', `${gameRel}/.cache`, `${gameRel}/backups`];
     if (!includeWorlds) skip.push(`${gameRel}/saves`);
     if (!includeScreenshots) skip.push(`${gameRel}/screenshots`);
-    return this.tasks.run(`Exportando ${id}`, { kind: 'export', instanceId: id }, async () => {
+    return this.tasks.run(tr('Exportando {name}', { name: id }), { kind: 'export', instanceId: id }, async () => {
       const items = await zip.collectFiles(root, '', (rel) => skip.some((s) => rel === s || rel.startsWith(`${s}/`)) || rel === 'logs.zip' || rel.endsWith('.part'));
+      if (personal !== 'keep') {
+        const at = items.findIndex((it) => it.name === 'instance.cfg' && it.abs);
+        if (at >= 0) {
+          const cfg = await IniFile.load(items[at].abs);
+          if (dropPersonalSettings(cfg)) items[at] = { name: 'instance.cfg', buffer: Buffer.from(cfg.toString(), 'utf8') };
+        }
+      }
       await zip.writeZip(dest, items);
       return dest;
     });
@@ -274,7 +353,7 @@ class Modpacks {
   async placeFile({ game, folder, version: fv, mod, url }) {
     const f = fv.files[0];
     const from = url || f.url || (await alternativeUrl(fv, f));
-    if (!from) throw new Error(`No hay de dónde descargar ${f.filename}`);
+    if (!from) throw new UserError('No hay de dónde descargar {file}', { file: f.filename });
     await http.download(from, await resolveInside(path.join(game, folder), f.filename), { hash: f.hashes.sha1, hashAlgo: 'sha1' });
     if (folder !== 'saves' && this.appConfig.get().writePrismMetadata) {
       const indexDir = folder === 'shaderpacks' ? path.join(game, folder) : path.join(game, folder, '.index');
@@ -300,7 +379,7 @@ class Modpacks {
   async exportCurseZip(id, dest, { name, version = '1.0.0', author = '', includeWorlds = false } = {}) {
     const inst = await this.instances.get(id);
     const game = gameDirOf(inst.root);
-    return this.tasks.run(`Exportando ${inst.name} (CurseForge)`, { kind: 'export', instanceId: id }, async (task) => {
+    return this.tasks.run(tr('Exportando {name} (CurseForge)', { name: inst.name }), { kind: 'export', instanceId: id }, async (task) => {
       const files = [];
       const listed = [];
       const handled = new Set();
@@ -330,7 +409,7 @@ class Modpacks {
       }
       // files added by hand or from Modrinth: the same file on CurseForge? (fingerprint)
       if (unknown.length && curseforge.hasKey()) {
-        task.progress(0.2, 'Buscando los archivos en CurseForge…');
+        task.progress(0.2, tr('Buscando los archivos en CurseForge…'));
         try {
           const fps = new Map();
           for (const u of unknown) fps.set(await curseFingerprint(u.abs), u);
@@ -345,7 +424,7 @@ class Modpacks {
           if (e.code === 'CANCELLED') throw e;
         }
       }
-      task.progress(0.45, 'Empaquetando…');
+      task.progress(0.45, tr('Empaquetando…'));
       const skip = ['logs', 'crash-reports', 'screenshots', 'backups', '.cache', 'options.txt.bak', '.havihub'];
       if (!includeWorlds) skip.push('saves');
       const all = await zip.collectFiles(game, 'overrides/', (rel) => skip.some((s) => rel === s || rel.startsWith(`${s}/`)) || rel.includes('/.index/') || rel.endsWith('.pw.toml'));
@@ -376,7 +455,7 @@ class Modpacks {
     const inst = await this.instances.get(id);
     const root = inst.root;
     const game = gameDirOf(root);
-    return this.tasks.run(`Exportando ${inst.name} (.mrpack)`, { kind: 'export', instanceId: id }, async (task) => {
+    return this.tasks.run(tr('Exportando {name} (.mrpack)', { name: inst.name }), { kind: 'export', instanceId: id }, async (task) => {
       const files = [];
       const overrideItems = [];
       const handled = new Set();
@@ -400,7 +479,7 @@ class Modpacks {
           }
         }
       }
-      task.progress(0.4, 'Empaquetando…');
+      task.progress(0.4, tr('Empaquetando…'));
       const skip = ['logs', 'crash-reports', 'saves', 'screenshots', 'backups', '.cache', 'options.txt.bak'];
       const all = await zip.collectFiles(game, 'overrides/', (rel) => skip.some((s) => rel === s || rel.startsWith(`${s}/`)) || rel.includes('/.index/') || rel.endsWith('.pw.toml') || rel.endsWith('.disabled'));
       for (const it of all) if (!handled.has(path.resolve(it.abs))) overrideItems.push(it);

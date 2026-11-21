@@ -11,6 +11,7 @@ const groups = require('./prism/groups');
 const { IniFile } = require('./util/ini');
 const { exists, listDir, uniqueDirName } = require('./util/fsx');
 const { walkFiles } = require('./importer');
+const { UserError, tr } = require('../shared/usertext');
 
 const ICON_EXTS = ['png', 'svg', 'jpg', 'jpeg', 'webp', 'gif', 'ico'];
 const same = (a, b) => Boolean(a && b) && path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
@@ -18,7 +19,7 @@ const same = (a, b) => Boolean(a && b) && path.resolve(a).toLowerCase() === path
 // Prism Launcher's own instances and icons folders
 async function prismFolders(prismDir) {
   if (!(await isPrismDataDir(prismDir))) {
-    const e = new Error('Esa carpeta no parece ser de Prism Launcher (no tiene prismlauncher.cfg ni la carpeta instances).');
+    const e = new UserError('Esa carpeta no parece ser de Prism Launcher (no tiene prismlauncher.cfg ni la carpeta instances).');
     e.code = 'BAD_SOURCE';
     throw e;
   }
@@ -71,7 +72,7 @@ class Sharing {
   async preview(prismDir) {
     const f = await prismFolders(prismDir);
     const own = this.ownDirs();
-    if (same(f.instancesDir, own.instancesDir)) throw new Error('Esa es la carpeta de Havi Hub.');
+    if (same(f.instancesDir, own.instancesDir)) throw new UserError('Esa es la carpeta de Havi Hub.');
     const prismIds = new Set((await listDir(f.instancesDir)).filter((e) => e.isDirectory()).map((e) => e.name.toLowerCase()));
     const ownCtx = this.ownContext();
     const { instances } = await new Instances(ownCtx, this.appConfig).list();
@@ -100,7 +101,7 @@ class Sharing {
     const own = this.ownDirs();
     const ownInstances = new Instances(ownCtx, this.appConfig);
     const ownGroups = await groups.loadGroupsSafe(ownCtx);
-    return this.tasks.run('Compartiendo perfiles con Prism Launcher', { kind: 'share', cancelable: false }, async (task) => {
+    return this.tasks.run(tr('Compartiendo perfiles con Prism Launcher'), { kind: 'share', cancelable: false }, async (task) => {
       const moved = [];
       const failed = [];
       let i = 0;

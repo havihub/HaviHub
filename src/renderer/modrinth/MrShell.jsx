@@ -14,7 +14,7 @@ import ImportLaunchersDialog from '../dialogs/ImportLaunchersDialog.jsx';
 import ErrorBoundary from '../components/ErrorBoundary.jsx';
 import { useApp } from '../lib/store.jsx';
 import { call } from '../lib/api.js';
-import { t } from '../lib/i18n.js';
+import { t, tm } from '../lib/i18n.js';
 import { timeAgo } from '../lib/format.js';
 import MrSocials from './MrSocials.jsx';
 import { useDropTarget } from '../lib/instanceDrag.js';
@@ -300,9 +300,9 @@ function RunningTasks() {
       <div className="mr-side-tasks">
         {running.map((x) => (
           <div key={x.id} className="mr-side-task">
-            <span className="mr-side-task-title">{x.title}</span>
+            <span className="mr-side-task-title">{tm(x.title, x.titleText)}</span>
             <Progress value={x.progress} indeterminate={!x.progress} />
-            <small className="muted">{x.detail}</small>
+            <small className="muted">{tm(x.detail, x.detailText)}</small>
           </div>
         ))}
       </div>

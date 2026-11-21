@@ -378,9 +378,8 @@ export default function Library() {
 
   const importArchive = async () => {
     try {
-      const r = await call('instances.import', { group: group || '' });
+      const r = await actions.importArchive(app, { group: group || '' });
       if (r) {
-        await app.refreshInstances();
         if (r.blocked && r.blocked.length) await actions.showInstallResult(app, { installed: [], skipped: [], blocked: r.blocked, failed: r.failed || [] }, t('Importación'));
         app.navigate({ page: 'instance', id: r.id, tab: 'content', sub: 'mods' });
       }

@@ -5,7 +5,7 @@ import { Modal } from '../components/Modal.jsx';
 import { Button, Progress } from '../components/ui.jsx';
 import { useApp } from '../lib/store.jsx';
 import { call } from '../lib/api.js';
-import { t } from '../lib/i18n.js';
+import { t, tm } from '../lib/i18n.js';
 
 export default function CloseTasksDialog({ tasks: initial, tray, onResolve }) {
   const app = useApp();
@@ -64,7 +64,7 @@ export default function CloseTasksDialog({ tasks: initial, tray, onResolve }) {
           {list.map((x) => (
             <div key={x.id} className="close-task">
               <div className="close-task-top">
-                <strong>{x.title}</strong>
+                <strong>{tm(x.title, x.titleText)}</strong>
                 <span className="muted small">{x.progress ? `${Math.round(x.progress * 100)} %` : ''}</span>
               </div>
               <Progress value={x.progress || 0} indeterminate={!x.progress} />

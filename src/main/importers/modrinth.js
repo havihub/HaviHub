@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const fsp = require('node:fs/promises');
 const { exists, listDir } = require('../util/fsx');
+const { UserError } = require('../../shared/usertext');
 
 const LOADERS = new Set(['forge', 'fabric', 'quilt', 'neoforge']);
 
@@ -44,7 +45,7 @@ async function withDb(root, fn) {
   try {
     sqlite = require('node:sqlite');
   } catch {
-    const e = new Error('Esta versión de Havi Hub no puede leer la base de datos de Modrinth.');
+    const e = new UserError('Esta versión de Havi Hub no puede leer la base de datos de Modrinth.');
     e.code = 'NO_SQLITE';
     throw e;
   }

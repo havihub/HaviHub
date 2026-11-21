@@ -17,6 +17,7 @@ const { exists, uniqueDirName, safeName } = require('./util/fsx');
 const { fileUrl } = require('./urls');
 const cfImport = require('./importers/curseforge');
 const mrImport = require('./importers/modrinth');
+const { UserError, tr } = require('../shared/usertext');
 
 const LAUNCHERS = { havi: 'Havi Hub', curseforge: 'CurseForge', modrinth: 'Modrinth App' };
 // files a launcher keeps in the game folder itself: they stay at the root of
@@ -157,7 +158,7 @@ class SyncManager {
 
   storeRoot() {
     const ctx = this.ctxProvider();
-    if (!ctx) throw new Error('La carpeta de datos de Havi Hub no está disponible.');
+    if (!ctx) throw new UserError('La carpeta de datos de Havi Hub no está disponible.');
     return path.join(ctx.dataDir, 'synced');
   }
 
@@ -248,14 +249,18 @@ class SyncManager {
   async findProfile(ref) {
     const all = await this.profiles();
     const p = all.find((x) => samePath(x.dir, ref.dir));
-    if (!p) throw new Error(`No se encontró el perfil "${ref.name || ref.dir}".`);
+    if (!p) throw new UserError('No se encontró el perfil "{name}".', { name: ref.name || ref.dir });
     return p;
   }
 
   async ensureClosed(launchers) {
     const open = (await this.running()).filter((l) => launchers.includes(l));
     if (open.length) {
-      const e = new Error(`Cierra ${open.map((l) => LAUNCHERS[l]).join(' y ')} antes de sincronizar: sus perfiles no se pueden mover mientras está abierto.`);
+      const names = open.map((l) => LAUNCHERS[l]);
+      const e =
+        names.length > 1
+          ? new UserError('Cierra {a} y {b} antes de sincronizar: sus perfiles no se pueden mover mientras están abiertos.', { a: names.slice(0, -1).join(', '), b: names[names.length - 1] })
+          : new UserError('Cierra {a} antes de sincronizar: sus perfiles no se pueden mover mientras está abierto.', { a: names[0] });
       e.code = 'LAUNCHER_OPEN';
       throw e;
     }
@@ -269,18 +274,18 @@ class SyncManager {
     for (const r of others) rest.push(await this.findProfile(r));
     const all = [m, ...rest];
     const launchers = all.map((p) => p.launcher);
-    if (new Set(launchers).size !== launchers.length) throw new Error('Elige un solo perfil de cada launcher.');
+    if (new Set(launchers).size !== launchers.length) throw new UserError('Elige un solo perfil de cada launcher.');
     for (const p of rest) {
       if (p.mcVersion !== m.mcVersion || (p.loader ? p.loader.id : '') !== (m.loader ? m.loader.id : '')) {
-        throw new Error(`"${p.name}" (${p.label}) usa otra versión o cargador que "${m.name}": no se pueden sincronizar.`);
+        throw new UserError('"{name}" ({label}) usa otra versión o cargador que "{other}": no se pueden sincronizar.', { name: p.name, label: p.label, other: m.name });
       }
     }
     for (const p of all) {
-      if (p.group) throw new Error(`"${p.name}" (${p.label}) ya está sincronizado.`);
-      if (p.launcher === 'havi' && this.isRunning(p.instanceId)) throw new Error(`"${p.name}" está abierto en el juego.`);
+      if (p.group) throw new UserError('"{name}" ({label}) ya está sincronizado.', { name: p.name, label: p.label });
+      if (p.launcher === 'havi' && this.isRunning(p.instanceId)) throw new UserError('"{name}" está abierto en el juego.', { name: p.name });
     }
     await this.ensureClosed(launchers);
-    return this.tasks.run(`Sincronizando ${m.name}`, { kind: 'sync', cancelable: false }, async (task) => {
+    return this.tasks.run(tr('Sincronizando {name}', { name: m.name }), { kind: 'sync', cancelable: false }, async (task) => {
       const root = this.storeRoot();
       await fsp.mkdir(root, { recursive: true });
       const store = path.join(root, await uniqueDirName(root, safeName(m.name, 'perfil')));
@@ -397,7 +402,7 @@ class SyncManager {
   // ------------------------------------------------ a CurseForge/Modrinth profile in Havi Hub
   async bringToHavi(ref) {
     const p = await this.findProfile(ref);
-    if (p.launcher === 'havi') throw new Error('Ese perfil ya está en Havi Hub.');
+    if (p.launcher === 'havi') throw new UserError('Ese perfil ya está en Havi Hub.');
     const ctx = this.ctxProvider();
     const dirs = await ctx.dirs();
     const instances = new Instances(ctx, this.appConfig);
@@ -434,12 +439,12 @@ class SyncManager {
   // left, the shared folder simply moves back into it.
   async detach(groupId, dir) {
     const g = this.groups().find((x) => x.id === groupId);
-    if (!g) throw new Error('Ese grupo ya no existe.');
+    if (!g) throw new UserError('Ese grupo ya no existe.');
     const member = g.members.find((m) => samePath(m.dir, dir));
-    if (!member) throw new Error('Ese perfil ya no está sincronizado.');
-    if (member.launcher === 'havi' && member.instanceId && this.isRunning(member.instanceId)) throw new Error(`"${member.name}" está abierto en el juego.`);
+    if (!member) throw new UserError('Ese perfil ya no está sincronizado.');
+    if (member.launcher === 'havi' && member.instanceId && this.isRunning(member.instanceId)) throw new UserError('"{name}" está abierto en el juego.', { name: member.name });
     await this.ensureClosed(g.members.map((m) => m.launcher));
-    return this.tasks.run(`Dejando de sincronizar ${member.name}`, { kind: 'sync', cancelable: false }, async (task) => {
+    return this.tasks.run(tr('Dejando de sincronizar {name}', { name: member.name }), { kind: 'sync', cancelable: false }, async (task) => {
       const rest = g.members.filter((m) => m !== member);
       const alive = [];
       for (const m of rest) if (samePath(await linkTarget(m.dir), g.store)) alive.push(m);

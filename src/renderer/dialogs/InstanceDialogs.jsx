@@ -1,11 +1,11 @@
 // Smaller instance dialogs: clone, share/export, move to group, install results.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal } from '../components/Modal.jsx';
 import { Button, Input, Checkbox, Select, Pills } from '../components/ui.jsx';
 import Icon from '../components/Icon.jsx';
 import InstanceImage from '../components/InstanceImage.jsx';
 import { call } from '../lib/api.js';
-import { t } from '../lib/i18n.js';
+import { t, tm } from '../lib/i18n.js';
 import { useApp } from '../lib/store.jsx';
 import { LIMITS } from '../../shared/limits.js';
 import { compatIssue, cmpVersion } from '../../shared/compat.js';
@@ -61,6 +61,13 @@ export function CloneDialog({ instance, onResolve }) {
   );
 }
 
+// The name a setting has in Opciones del perfil (keys from launchsettings.js)
+function settingLabel(key) {
+  if (key.startsWith('Env ')) return t('variable {name}', { name: key.slice(4) });
+  const names = { PreLaunchCommand: t('Antes de iniciar'), WrapperCommand: t('Comando envoltorio (wrapper)'), PostExitCommand: t('Después de cerrar'), JavaPath: t('Instalación de Java'), JvmArgs: t('Argumentos de la JVM'), CustomGLFWPath: t('Ruta de GLFW'), CustomOpenALPath: t('Ruta de OpenAL') };
+  return names[key] || key;
+}
+
 // "Compartir perfil": a CurseForge modpack (.zip, what the CurseForge app
 // imports), a Modrinth modpack (.mrpack) or a Prism instance (.zip).
 export function ShareDialog({ instance, onResolve }) {
@@ -72,10 +79,20 @@ export function ShareDialog({ instance, onResolve }) {
   const [summary, setSummary] = useState('');
   const [includeWorlds, setIncludeWorlds] = useState(false);
   const [busy, setBusy] = useState(false);
+  // this PC's commands, Java and variables: left out of a Prism .zip unless checked
+  const [personal, setPersonal] = useState([]);
+  const [sharePersonal, setSharePersonal] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    if (format === 'zip') call('instances.exportSettings', instance.id).then((list) => alive && setPersonal(list || []), () => {});
+    return () => {
+      alive = false;
+    };
+  }, [format, instance.id]);
   const exportFile = async () => {
     setBusy(true);
     try {
-      const opts = format === 'mrpack' ? { format, name, version, summary } : format === 'curseforge' ? { format, name, version, author, includeWorlds } : { format, includeWorlds };
+      const opts = format === 'mrpack' ? { format, name, version, summary } : format === 'curseforge' ? { format, name, version, author, includeWorlds } : { format, includeWorlds, personalSettings: sharePersonal ? 'keep' : 'drop' };
       const dest = await call('instances.export', instance.id, opts);
       if (dest) {
         app.toast(t('Exportado en {p}', { p: dest }), { type: 'success' });
@@ -151,6 +168,14 @@ export function ShareDialog({ instance, onResolve }) {
           <>
             <p className="muted">{t('Una copia completa del perfil para Prism Launcher o Havi Hub.')}</p>
             <Checkbox checked={includeWorlds} onChange={setIncludeWorlds} label={t('Incluir mundos')} />
+            {personal.length ? (
+              <>
+                <Checkbox checked={sharePersonal} onChange={setSharePersonal} label={t('Incluir mis comandos y variables de entorno')} />
+                <p className="muted small">
+                  {t('Son de tu PC y pueden tener datos tuyos, como contraseñas o carpetas. Sin marcar, el perfil se comparte sin ellos: {list}.', { list: personal.map((p) => settingLabel(p.key)).join(', ') })}
+                </p>
+              </>
+            ) : null}
             <p className="muted small">{t('Incluye todo el perfil: mods, configuración y paquetes de recursos.')}</p>
           </>
         )}
@@ -245,7 +270,7 @@ export function InstallResultDialog({ result, title, onResolve }) {
             {skipped.map((i, n) => (
               <div key={n} className="result-row">
                 <Icon name="info" size={16} />
-                {i.title} <span className="muted">— {i.reason}</span>
+                {i.title} <span className="muted">— {tm(i.reason)}</span>
               </div>
             ))}
           </div>
@@ -278,7 +303,7 @@ export function InstallResultDialog({ result, title, onResolve }) {
             {failed.map((f, n) => (
               <div key={n} className="result-row err">
                 <Icon name="xCircle" size={16} />
-                {f.title} <span className="muted">— {f.reason}</span>
+                {tm(f.title)} <span className="muted">— {tm(f.reason)}</span>
               </div>
             ))}
           </div>

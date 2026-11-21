@@ -7,6 +7,7 @@ const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fsp = require('node:fs/promises');
 const { killTree } = require('../engine');
+const { UserError } = require('../../shared/usertext');
 
 class Launcher {
   constructor(ctxProvider, emit, { engine, prepare, gameDir, onEngineStart, ensureJava } = {}) {
@@ -28,7 +29,7 @@ class Launcher {
 
   async launch(id, { server, world, profile, offline, offlineName } = {}) {
     const ctx = this.ctxProvider();
-    if (!ctx) throw Object.assign(new Error('La carpeta de datos de Havi Hub no está disponible.'), { code: 'NO_DATA' });
+    if (!ctx) throw Object.assign(new UserError('La carpeta de datos de Havi Hub no está disponible.'), { code: 'NO_DATA' });
     if (this.running.has(id) || this.starting.has(id)) return { already: true };
     this.starting.add(id);
     this.emit('instance:running', { id, running: true, preparing: true });

@@ -520,9 +520,18 @@ try {
     await page.locator('.group-card', { hasText: 'Vanilla' }).click();
     await page.locator('.inst-card', { hasText: '[26.2] Vanilla' }).click();
     await page.locator('.play-btn').click();
+    const playedAt = Date.now();
     await page.waitForTimeout(400);
     await shot('28-launching');
-    await page.waitForTimeout(2500);
+    // the stand-in game closes after a second; a world can only start once it
+    // has (on a busy machine that takes longer than a fixed wait)
+    for (let i = 0; i < 60 && !(fs.existsSync(path.join(data, 'launch.log')) && fs.readFileSync(path.join(data, 'launch.log'), 'utf8').includes('--launch 26.2 Vanilla')); i++) await page.waitForTimeout(500);
+    await page.waitForFunction(async () => {
+      const r = await window.havihub.call('instances.running');
+      return Array.isArray(r.value) && !r.value.includes('26.2 Vanilla');
+    }, null, { timeout: 30000, polling: 250 });
+    // and Play ignores the same profile for 4 s after a click (a double click starts it once)
+    await page.waitForTimeout(Math.max(0, playedAt + 4500 - Date.now()));
     await page.locator('.play-drop').click();
     await page.locator('.play-row', { hasText: 'Hardcore - copia' }).click();
     await page.waitForTimeout(2500);
@@ -639,7 +648,7 @@ try {
     if (await page.locator('.ac-type').count()) {
       await page.locator('.ac-row').nth(1).hover();
       await cap('40b-add-content-hover', 500);
-      await page.locator('.ac-filters-btn').click();
+      await page.locator('.ac-filters-btn:not(.ac-hide-btn)').click();
       await page.waitForTimeout(400);
       await shot('40c-add-content-filters');
       await page.keyboard.press('Escape');

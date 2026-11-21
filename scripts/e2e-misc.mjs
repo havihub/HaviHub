@@ -110,7 +110,9 @@ try {
   const bottom = grid.filter((g) => g.y === rows[1]);
   check('each CurseForge theme is above its Modrinth counterpart', ['original', 'OLED', 'claro'].every((k, i) => top[i].name.includes('CurseForge') && top[i].name.includes(k) && bottom[i].name.includes('Modrinth') && bottom[i].name.toLowerCase().includes(k.toLowerCase()) && top[i].x === bottom[i].x));
   const icons = await page.evaluate(() => [...document.querySelectorAll('.season-row > .mc-art, .season-row > .pixels')].map((e) => { const r = e.getBoundingClientRect(); return `${Math.round(r.width)}x${Math.round(r.height)}`; }));
-  check('the three theme pictures are the same size', icons.length === 3 && new Set(icons).size === 1, icons.join(' '));
+  // the game's own art keeps its shape: each one fills the same 44 px box on its longer side
+  const longest = icons.map((x) => Math.max(...x.split('x').map(Number)));
+  check('the three theme pictures are the same size', icons.length === 3 && Math.max(...longest) - Math.min(...longest) <= 1, icons.join(' '));
   await page.locator('.season-row').first().scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(out, 'themes.png') });
   // ---- licenses: every bundled library, the full texts and the notices

@@ -6,6 +6,7 @@ import { now, setClockOffset } from './clock.js';
 import { activeSeason } from '../../shared/seasons.js';
 import { setLanguage, t } from './i18n.js';
 import { ConfirmDialog, PromptDialog } from '../components/Modal.jsx';
+import ModpackKeysDialog from '../dialogs/ModpackKeysDialog.jsx';
 import { capturingInput } from './inputCapture.js';
 import { setQuiet } from './quiet.js';
 import { loadMcTextures, useMcTextures } from './mc-textures.js';
@@ -320,6 +321,17 @@ export function AppProvider({ children }) {
       }),
       on('window:maximized', (m) => setMaximized(m)),
       on('engine:status', (st) => setEngineStatus(st)),
+      // a modpack installed with key bindings of its own: whose to use (ModpackKeysDialog)
+      on('modpack:keys', async ({ id, name }) => {
+        const choice = await openDialog(ModpackKeysDialog, { name });
+        if (choice !== 'mine') return;
+        try {
+          await call('instances.applyKeysTo', id);
+          toast(t('Tus teclas quedaron puestas en {name}', { name }), { type: 'success' });
+        } catch (e) {
+          showError(e);
+        }
+      }),
       on('toast', (x) => toast(x.vars ? t(x.message, Object.fromEntries(Object.entries(x.vars).map(([k, v]) => [k, typeof v === 'string' ? t(v) : v]))) : x.message, { type: x.type || 'info', duration: x.vars ? 12000 : undefined })),
       on('instance:running', ({ id, running: isRunning, preparing, crashed, crash, failed, error }) => {
         setLaunching((prev) => {

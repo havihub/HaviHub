@@ -4,6 +4,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { writeJson, listDir, statSafe, safeName, exists, parseLenientJson } = require('../util/fsx');
 const { fileUrl } = require('../urls');
+const { UserError } = require('../../shared/usertext');
 
 function pngSize(buf) {
   if (!buf || buf.length < 24 || buf.readUInt32BE(0) !== 0x89504e47) return null;
@@ -26,7 +27,7 @@ class Skins {
       const data = parseLenientJson(await fsp.readFile(file, 'utf8'));
       return Array.isArray(data.skins) ? data.skins : [];
     } catch (e) {
-      if (strict) throw new Error('No se pudo leer skins/index.json; no se modificó.');
+      if (strict) throw new UserError('No se pudo leer skins/index.json; no se modificó.');
       return [];
     }
   }
@@ -66,7 +67,7 @@ class Skins {
     const buf = Buffer.from(png);
     const size = pngSize(buf);
     if (!size || size.width !== 64 || (size.height !== 64 && size.height !== 32)) {
-      const e = new Error('La imagen no es una skin válida (debe ser PNG de 64×64 o 64×32).');
+      const e = new UserError('La imagen no es una skin válida (debe ser PNG de 64×64 o 64×32).');
       e.code = 'INVALID_SKIN';
       throw e;
     }
@@ -96,7 +97,7 @@ class Skins {
     if (patch.newName && patch.newName !== name) {
       const dir = await this.dir();
       const newName = safeName(patch.newName, 'skin');
-      if (await exists(path.join(dir, `${newName}.png`))) throw new Error('Ya existe una skin con ese nombre');
+      if (await exists(path.join(dir, `${newName}.png`))) throw new UserError('Ya existe una skin con ese nombre');
       await fsp.rename(path.join(dir, `${name}.png`), path.join(dir, `${newName}.png`));
       entry.name = newName;
     }

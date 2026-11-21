@@ -340,8 +340,10 @@ function Welcome({ onDone, only = null }) {
 
 // Decides once per start, when the settings, the instances and the game's files
 // are known, whether the welcome is due (or its last step alone); until then a
-// new installation shows nothing of the app behind it.
-export default function WelcomeGate() {
+// new installation shows nothing of the app behind it. `after` (the guided
+// tour) only shows once it has decided there is nothing to show, so the tour
+// never lands on top of the welcome or of its "Preparando Minecraft" step.
+export default function WelcomeGate({ after = null }) {
   const app = useApp();
   useMcTextures();
   const settled = mcSettled();
@@ -367,5 +369,5 @@ export default function WelcomeGate() {
       document.body,
     );
   }
-  return null;
+  return mode === 'none' ? after : null;
 }

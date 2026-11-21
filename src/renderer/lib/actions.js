@@ -1,13 +1,14 @@
 // Instance actions shared by the library cards, context menus and the instance page.
 import BlockedFilesDialog from '../dialogs/BlockedFilesDialog.jsx';
 import { call } from './api.js';
-import { t } from './i18n.js';
+import { t, tm } from './i18n.js';
 import ImageDialog from '../dialogs/ImageDialog.jsx';
 import IconEditorDialog from '../dialogs/IconEditorDialog.jsx';
 import { instanceRecipe } from '../components/InstanceImage.jsx';
 import { iconPng, recipeKey, parseRecipe, defaultRecipe } from './instance-icons.js';
 import ProfileOptionsDialog from '../dialogs/ProfileOptionsDialog.jsx';
 import { CloneDialog, ShareDialog, MoveGroupDialog, InstallResultDialog } from '../dialogs/InstanceDialogs.jsx';
+import LaunchSettingsDialog from '../dialogs/LaunchSettingsDialog.jsx';
 
 // Upload a picture of the user's as the instance image (kept at full size).
 export async function changeImage(app, inst) {
@@ -143,7 +144,7 @@ export async function repairInstance(app, inst) {
     lines.push(t('{n} archivos verificados correctamente.', { n: r.ok }));
     if (r.redownloaded.length) lines.push(t('Se volvieron a descargar: {list}', { list: r.redownloaded.join(', ') }));
     if (r.removedMetadata.length) lines.push(t('Metadatos huérfanos eliminados: {list}', { list: r.removedMetadata.join(', ') }));
-    if (r.problems.length) lines.push(t('Problemas: {list}', { list: r.problems.join('; ') }));
+    if (r.problems.length) lines.push(t('Problemas: {list}', { list: r.problems.map((p) => (typeof p === 'string' ? p : `${p.file}: ${tm(p.error)}`)).join('; ') }));
     lines.push(t('Las librerías nativas se regenerarán al iniciar.'));
     await app.confirm({ title: t('Perfil reparado'), message: lines.join('\n\n'), confirmLabel: t('Listo'), cancelLabel: t('Cerrar'), icon: 'wrench' });
     app.bumpContent();
@@ -196,4 +197,18 @@ export async function showInstallResult(app, result, title) {
     return;
   }
   await app.openDialog(InstallResultDialog, { result, title });
+}
+
+// Import a modpack or an exported instance (.mrpack / .zip) chosen by the
+// person. A Prism instance that would run something on this computer when it
+// starts is shown first (LaunchSettingsDialog). Returns the result, or null.
+export async function importArchive(app, opts = {}) {
+  let r = await call('instances.import', opts);
+  if (r && r.confirm === 'launchSettings') {
+    const choice = await app.openDialog(LaunchSettingsDialog, { file: r.path.split(/[\\/]/).pop(), settings: r.settings });
+    if (!choice) return null;
+    r = await call('instances.import', { ...opts, path: r.path, launchSettings: choice });
+  }
+  if (r) await app.refreshInstances();
+  return r;
 }

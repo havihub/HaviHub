@@ -2,6 +2,7 @@
 // Havi Hub's common shapes.
 const http = require('../util/http');
 const { envFromCurseVersions } = require('./env');
+const { UserError } = require('../../shared/usertext');
 
 const BASE = 'https://api.curseforge.com/v1';
 const GAME_ID = 432;
@@ -17,7 +18,7 @@ function setKeyProvider(fn) {
 }
 
 function noKey() {
-  const e = new Error('Para usar CurseForge necesitas una API key de CurseForge (Ajustes → Addons).');
+  const e = new UserError('Para usar CurseForge necesitas una API key de CurseForge (Ajustes → Addons).');
   e.code = 'CF_NO_KEY';
   return e;
 }
@@ -33,7 +34,7 @@ async function get(path) {
     return await http.getJson(`${BASE}${path}`, { headers: headers() });
   } catch (e) {
     if (e.status === 403 || e.status === 401) {
-      const err = new Error('CurseForge rechazó la API key. Revísala en Ajustes → Addons.');
+      const err = new UserError('CurseForge rechazó la API key. Revísala en Ajustes → Addons.');
       err.code = 'CF_BAD_KEY';
       throw err;
     }
@@ -46,7 +47,7 @@ async function post(path, body) {
     return await http.postJson(`${BASE}${path}`, body, { headers: headers() });
   } catch (e) {
     if (e.status === 403 || e.status === 401) {
-      const err = new Error('CurseForge rechazó la API key. Revísala en Ajustes → Addons.');
+      const err = new UserError('CurseForge rechazó la API key. Revísala en Ajustes → Addons.');
       err.code = 'CF_BAD_KEY';
       throw err;
     }

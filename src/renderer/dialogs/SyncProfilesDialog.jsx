@@ -11,7 +11,7 @@ import { GeneratedIcon, LoaderIcon, loaderLabel } from '../components/InstanceIm
 import { defaultRecipe, parseRecipe } from '../lib/instance-icons.js';
 import { useApp } from '../lib/store.jsx';
 import { call } from '../lib/api.js';
-import { t } from '../lib/i18n.js';
+import { t, tm } from '../lib/i18n.js';
 import { timeAgo } from '../lib/format.js';
 import BrandLogo from '../components/BrandLogo.jsx';
 import SharePrismDialog from './SharePrismDialog.jsx';
@@ -154,7 +154,7 @@ export default function SyncProfilesDialog({ onResolve }) {
     try {
       const r = await fn();
       await app.refreshInstances();
-      if (r && r.problems && r.problems.length) app.toast(r.problems.map((p) => `${p.name}: ${p.error}`).join('\n'), { type: 'warning', duration: 12000 });
+      if (r && r.problems && r.problems.length) app.toast(r.problems.map((p) => `${p.name}: ${tm(p.error)}`).join('\n'), { type: 'warning', duration: 12000 });
       else if (done) app.toast(done, { type: 'success' });
       load();
     } catch (e) {

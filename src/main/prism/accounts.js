@@ -4,11 +4,12 @@ const fsp = require('node:fs/promises');
 const crypto = require('node:crypto');
 const { readJson, writeJson, parseLenientJson } = require('../util/fsx');
 const http = require('../util/http');
+const { UserError } = require('../../shared/usertext');
 
 const MC_API = 'https://api.minecraftservices.com/minecraft/profile';
 
 function tokenError() {
-  const e = new Error('La sesión de esta cuenta expiró. Juega una vez o renueva la sesión y vuelve a intentarlo.');
+  const e = new UserError('La sesión de esta cuenta expiró. Juega una vez o renueva la sesión y vuelve a intentarlo.');
   e.code = 'TOKEN_EXPIRED';
   return e;
 }
@@ -71,14 +72,14 @@ class Accounts {
   async rawStrict() {
     const text = await fsp.readFile(this.ctx.accountsFile(), 'utf8');
     const data = parseLenientJson(text);
-    if (!data || !Array.isArray(data.accounts)) throw new Error('accounts.json tiene un formato inesperado; no se modificó.');
+    if (!data || !Array.isArray(data.accounts)) throw new UserError('accounts.json tiene un formato inesperado; no se modificó.');
     return data;
   }
 
   async findRaw(profileId) {
     const data = await this.rawStrict();
     const acc = (data.accounts || []).find((a) => a.profile && a.profile.id === profileId);
-    if (!acc) throw new Error('Cuenta no encontrada');
+    if (!acc) throw new UserError('Cuenta no encontrada');
     return { data, acc };
   }
 
@@ -95,7 +96,7 @@ class Accounts {
   // Microsoft account that owns Minecraft is in Havi Hub.
   async addOffline(username) {
     const name = String(username || '').trim();
-    if (!/^[A-Za-z0-9_]{3,16}$/.test(name)) throw new Error('El nombre debe tener de 3 a 16 caracteres: letras, números o guion bajo.');
+    if (!/^[A-Za-z0-9_]{3,16}$/.test(name)) throw new UserError('El nombre debe tener de 3 a 16 caracteres: letras, números o guion bajo.');
     let data;
     try {
       data = await this.rawStrict();
@@ -105,8 +106,8 @@ class Accounts {
     }
     const accounts = data.accounts || [];
     const premium = accounts.some((a) => (a.type || 'MSA') !== 'Offline' && a.profile && a.profile.id);
-    if (!premium) throw Object.assign(new Error('Primero agrega una cuenta de Microsoft que tenga Minecraft. Después puedes sumar cuentas offline.'), { code: 'NEEDS_PREMIUM' });
-    if (accounts.some((a) => a.type === 'Offline' && a.profile && a.profile.name.toLowerCase() === name.toLowerCase())) throw new Error(`Ya tienes una cuenta offline llamada ${name}.`);
+    if (!premium) throw Object.assign(new UserError('Primero agrega una cuenta de Microsoft que tenga Minecraft. Después puedes sumar cuentas offline.'), { code: 'NEEDS_PREMIUM' });
+    if (accounts.some((a) => a.type === 'Offline' && a.profile && a.profile.name.toLowerCase() === name.toLowerCase())) throw new UserError('Ya tienes una cuenta offline llamada {name}.', { name });
     const account = {
       type: 'Offline',
       ygg: { iat: Math.floor(Date.now() / 1000), token: '0', extra: { userName: name, clientToken: crypto.randomUUID().replace(/-/g, '') } },
@@ -127,7 +128,7 @@ class Accounts {
   async token(profileId) {
     const { acc } = await this.findRaw(profileId);
     if (acc.type === 'Offline') {
-      const e = new Error('Las cuentas offline no pueden cambiar la skin online.');
+      const e = new UserError('Las cuentas offline no pueden cambiar la skin online.');
       e.code = 'OFFLINE';
       throw e;
     }
@@ -214,13 +215,13 @@ class Accounts {
 // Fetch any player's current skin (public Mojang API)
 async function fetchPlayerSkin(username) {
   const prof = await http.getJson(`https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(username)}`);
-  if (!prof || !prof.id) throw new Error('Jugador no encontrado');
+  if (!prof || !prof.id) throw new UserError('Jugador no encontrado');
   const sess = await http.getJson(`https://sessionserver.mojang.com/session/minecraft/profile/${prof.id}`);
   const prop = (sess.properties || []).find((p) => p.name === 'textures');
-  if (!prop) throw new Error('Este jugador no tiene skin');
+  if (!prop) throw new UserError('Este jugador no tiene skin');
   const tex = JSON.parse(Buffer.from(prop.value, 'base64').toString('utf8'));
   const skin = tex.textures && tex.textures.SKIN;
-  if (!skin) throw new Error('Este jugador usa la skin por defecto');
+  if (!skin) throw new UserError('Este jugador usa la skin por defecto');
   const png = await http.getBuffer(skin.url.replace('http://', 'https://'));
   return { name: prof.name, png, model: skin.metadata && skin.metadata.model === 'slim' ? 'SLIM' : 'CLASSIC' };
 }

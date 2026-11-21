@@ -1,7 +1,8 @@
 name: Auto-merge work branches
 
 # Every push to a work branch (any branch but main) is squashed into main,
-# the branch is deleted and the deploy/build of this repo is started.
+# once the result passes the tests and builds; then the branch is deleted and
+# the deploy/build of this repo is started.
 on:
   push:
     branches-ignore: ["main", "gh-pages"]
@@ -17,6 +18,9 @@ concurrency:
 
 jobs:
   merge:
+    # not in a fork: there a branch is someone's contribution, waiting for a
+    # pull request, and merging it into the fork's main would delete it
+    if: github.event.repository.fork == false
     runs-on: ubuntu-latest
     env:
       BRANCH: ${{ github.ref_name }}
@@ -42,8 +46,28 @@ jobs:
             echo "Nothing new to merge"
           else
             git commit -m "$msg" --author="$OWNER_NAME <$OWNER_EMAIL>"
-            git push origin HEAD:main
+            echo "MERGED=1" >> "$GITHUB_ENV"
           fi
+
+      # what goes into main (and into a release) has to pass the tests and
+      # build first; if it doesn't, main and the branch stay as they are
+      - uses: actions/setup-node@v6
+        if: env.MERGED == '1'
+        with:
+          node-version: 22
+          cache: npm
+      - name: Test the result
+        if: env.MERGED == '1'
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Push to main
+        if: env.MERGED == '1'
+        run: git push origin HEAD:main
 
       - name: Delete the branch
         run: git push origin --delete "$BRANCH" || true

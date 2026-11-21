@@ -268,9 +268,8 @@ export default function MrHome() {
 
   const importArchive = async () => {
     try {
-      const r = await call('instances.import', {});
+      const r = await actions.importArchive(app, {});
       if (r) {
-        await app.refreshInstances();
         if (r.blocked && r.blocked.length) await actions.showInstallResult(app, { installed: [], skipped: [], blocked: r.blocked, failed: r.failed || [] }, t('Importación'));
         app.navigate({ page: 'instance', id: r.id });
       }

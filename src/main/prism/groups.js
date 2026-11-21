@@ -2,6 +2,7 @@
 const path = require('node:path');
 const fsp = require('node:fs/promises');
 const { writeJson, exists, parseLenientJson } = require('../util/fsx');
+const { UserError } = require('../../shared/usertext');
 
 // Prism Launcher keeps instgroups.json inside the instances folder (so it is
 // shared with Prism when both use the same folder). A copy left next to
@@ -28,7 +29,7 @@ async function loadGroups(ctx) {
       try {
         data = parseLenientJson(text);
       } catch {
-        const e = new Error('No se pudo leer instgroups.json (¿Prism lo está guardando?). Intenta de nuevo en unos segundos.');
+        const e = new UserError('No se pudo leer instgroups.json (¿Prism lo está guardando?). Intenta de nuevo en unos segundos.');
         e.code = 'GROUPS_UNREADABLE';
         throw e;
       }

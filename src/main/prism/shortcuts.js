@@ -10,6 +10,7 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { safeName } = require('../util/fsx');
+const { UserError } = require('../../shared/usertext');
 
 // Havi Hub's name on Linux: its menu entry, its icon and its window class.
 // The old name was "havi-hub"; what was left under that name is replaced when found.
@@ -129,7 +130,7 @@ async function createDesktopShortcut({ electron, exe, preArgs = [], instanceId, 
       description: `Jugar ${name} (Havi Hub)`,
       ...(icon ? { icon, iconIndex: 0 } : {}),
     });
-    if (!ok) throw new Error('Windows no permitió crear el acceso directo');
+    if (!ok) throw new UserError('Windows no permitió crear el acceso directo');
     return { files: [file] };
   }
   if (process.platform === 'linux') {
@@ -172,7 +173,7 @@ async function createDesktopShortcut({ electron, exe, preArgs = [], instanceId, 
     await fsp.writeFile(file, `#!/bin/sh\n${q(exe)} ${argString} &\n`, { mode: 0o755 });
     return { files: [file] };
   }
-  throw new Error('Plataforma no soportada');
+  throw new UserError('Plataforma no soportada');
 }
 
 // ---- Havi Hub in the Linux application menu (AppImage / unpacked builds)
@@ -274,8 +275,8 @@ function installSystemMenuEntry({ appImage, iconFile }) {
     execFile('pkexec', ['sh', '-c', script], { timeout: 5 * 60 * 1000 }, (err, stdout, stderr) => {
       if (!err) return resolve({ file: `/usr/share/applications/${APP_DESKTOP}`, exe: target });
       const msg = String(stderr || err.message || '');
-      if (err.code === 126 || /dismissed|Not authorized|cancel/i.test(msg)) return reject(Object.assign(new Error('Se canceló la contraseña de administrador.'), { code: 'CANCELLED' }));
-      if (err.code === 'ENOENT') return reject(new Error('Falta pkexec (polkit). Instala Havi Hub con el paquete .deb para que aparezca para todos los usuarios.'));
+      if (err.code === 126 || /dismissed|Not authorized|cancel/i.test(msg)) return reject(Object.assign(new UserError('Se canceló la contraseña de administrador.'), { code: 'CANCELLED' }));
+      if (err.code === 'ENOENT') return reject(new UserError('Falta pkexec (polkit). Instala Havi Hub con el paquete .deb para que aparezca para todos los usuarios.'));
       return reject(new Error(msg.trim() || 'No se pudo instalar para todos los usuarios'));
     });
   });

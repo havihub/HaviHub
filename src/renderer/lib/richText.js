@@ -9,7 +9,23 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     node.setAttribute('rel', 'noopener noreferrer');
   }
   if (node.tagName === 'IMG') node.setAttribute('loading', 'lazy');
+  // only YouTube's own player, checked by its address (not by text matching,
+  // which "data-src=…youtube.com" or "youtube.com.example.net" would fool)
+  if (node.tagName === 'IFRAME' && !isVideoPlayer(node.getAttribute('src'))) {
+    node.removeAttribute('src');
+    node.removeAttribute('srcdoc');
+  }
 });
+
+const PLAYERS = new Set(['www.youtube.com', 'youtube.com', 'www.youtube-nocookie.com', 'youtube-nocookie.com']);
+function isVideoPlayer(src) {
+  try {
+    const u = new URL(String(src || ''));
+    return u.protocol === 'https:' && PLAYERS.has(u.hostname.toLowerCase()) && u.pathname.startsWith('/embed/');
+  } catch {
+    return false;
+  }
+}
 
 export function renderBody(body, format) {
   const html = format === 'markdown' ? marked.parse(body || '', { gfm: true, breaks: false }) : body || '';

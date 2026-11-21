@@ -232,13 +232,13 @@ function load() {
     // nothing saved yet
   }
 }
+// Written to a temporary file and renamed: whoever reads it (or the next
+// start, if Havi Hub closes half way) sees the old copy or the new one, never
+// a file cut in the middle (tests/social.test.js read it empty on a busy CI).
 function save() {
   if (!store || !store.file) return;
-  const fsp = require('fs/promises');
-  const path = require('path');
-  fsp
-    .mkdir(path.dirname(store.file), { recursive: true })
-    .then(() => fsp.writeFile(store.file, JSON.stringify(Object.fromEntries(cache))))
+  require('./util/fsx')
+    .writeFileAtomic(store.file, JSON.stringify(Object.fromEntries(cache)))
     .catch(() => {});
 }
 

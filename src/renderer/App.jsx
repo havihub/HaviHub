@@ -277,8 +277,7 @@ function Shell() {
   return (
     <>
       {tree}
-      <WelcomeGate />
-      {app.config && app.config.welcomeDone ? <Tour /> : null}
+      <WelcomeGate after={app.config && app.config.welcomeDone ? <Tour /> : null} />
     </>
   );
 }

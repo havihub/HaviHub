@@ -30,3 +30,12 @@ export function t(str, vars) {
   if (vars) s = s.replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined ? String(vars[k]) : m));
   return s;
 }
+
+// A text that comes from the main process (src/shared/usertext.js): its
+// template and values ({ text, vars }) when it has them, or the Spanish text.
+//   tm(task.title, task.titleText)   tm(result.reason)   tm(error.message, error.i18n)
+export function tm(value, text) {
+  const x = text && typeof text.text === 'string' ? text : value && typeof value === 'object' && typeof value.text === 'string' ? value : null;
+  if (x) return t(x.text, x.vars);
+  return value === undefined || value === null ? '' : t(String(value));
+}

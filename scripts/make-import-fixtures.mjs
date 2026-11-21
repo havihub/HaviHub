@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
 
@@ -129,7 +130,8 @@ export function makeModrinth(root, { old = false } = {}) {
   return app;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// run directly (not imported). Compared as URLs: on Windows the path has a drive and back slashes
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const out = path.resolve(process.argv[2] || 'import-fixtures');
   makeCurseForge(out);
   makeModrinth(out, { old: process.argv.includes('--old-modrinth') });

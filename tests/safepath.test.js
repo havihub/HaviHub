@@ -164,3 +164,22 @@ test('tomlFileName reads both string styles', () => {
   assert.equal(tomlFileName("name='x'\nfilename = '..\\\\x'"), '..\\\\x');
   assert.equal(tomlFileName('name = "x"'), null);
 });
+
+// A folder still to be created, reached through a link (or, on Windows, a
+// short 8.3 name such as RUNNER~1 in the temp folder): what goes inside it is
+// inside. Both paths are resolved the same way before they are compared.
+test('a new folder behind a link: what goes inside it is accepted', async () => {
+  const { assertInside } = require('../src/main/util/safepath');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'havihub-safepath-link-'));
+  fs.mkdirSync(path.join(base, 'real'));
+  fs.symlinkSync(path.join(base, 'real'), path.join(base, 'link'), process.platform === 'win32' ? 'junction' : 'dir');
+  const root = path.join(base, 'link', 'new-folder');
+  const target = path.join(root, 'sub', 'a.txt');
+  assert.equal(await assertInside(root, target), target);
+  // and a link inside it that leads out is still refused
+  fs.mkdirSync(path.join(base, 'outside'));
+  fs.mkdirSync(path.join(base, 'real', 'pack'));
+  fs.symlinkSync(path.join(base, 'outside'), path.join(base, 'real', 'pack', 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
+  await assert.rejects(assertInside(path.join(base, 'link', 'pack'), path.join(base, 'link', 'pack', 'escape', 'a.txt')), { code: 'EUNSAFEPATH' });
+  fs.rmSync(base, { recursive: true, force: true });
+});

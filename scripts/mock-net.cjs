@@ -85,6 +85,15 @@ function jarBytes(filename, modId, name) {
   return yazlFree;
 }
 
+const temurinCache = new Map();
+function temurinZip(major) {
+  if (!temurinCache.has(major)) {
+    const home = `jdk-${major}.0.1+8-jre`;
+    temurinCache.set(major, makeStoredZip({ [`${home}/bin/java`]: '#!/bin/sh\nexit 0\n', [`${home}/bin/javaw.exe`]: 'MZ', [`${home}/release`]: `JAVA_VERSION="${major}.0.1"\n` }));
+  }
+  return temurinCache.get(major);
+}
+
 // minimal STORED zip writer (sync) so we can hash downloads deterministically
 function makeStoredZip(files) {
   const crcTable = new Uint32Array(256).map((_, n) => {
@@ -724,6 +733,18 @@ async function mockFetch(input, init = {}) {
       return new Response(stream, { status: 200, headers: { 'content-type': 'application/java-archive', 'content-length': String(jar.length) } });
     }
     return json({}, 404);
+  }
+  // Adoptium (Java for a profile): the newest Temurin is a small zip with a
+  // stand-in java program, listed with its SHA-256 as the real API does
+  if (u.host === 'api.adoptium.net' && u.pathname.startsWith('/v3/assets/latest/')) {
+    const major = u.pathname.split('/')[4];
+    const os = u.searchParams.get('os');
+    const zip = temurinZip(major);
+    const name = `OpenJDK${major}U-jre_${u.searchParams.get('architecture')}_${os}_hotspot.zip`;
+    return json([{ version: { semver: `${major}.0.1+8` }, binary: { package: { name, link: `https://github.com/adoptium/temurin${major}-binaries/releases/download/mock/${name}`, checksum: crypto.createHash('sha256').update(zip).digest('hex'), size: zip.length } } }]);
+  }
+  if (u.host === 'github.com' && /^\/adoptium\/temurin(\d+)-binaries\//.test(u.pathname)) {
+    return bin(temurinZip(/temurin(\d+)-binaries/.exec(u.pathname)[1]), 'application/zip');
   }
   // Prism Launcher releases (engine download): HAVIHUB_MOCK_ENGINE_ASSET is a real
   // archive on disk served as the newest release (HAVIHUB_MOCK_ENGINE_VERSION)

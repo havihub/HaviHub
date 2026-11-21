@@ -10,6 +10,7 @@ const http = require('./util/http');
 const { extractPrefix } = require('./util/zip');
 const { extractTarGz } = require('./util/tar');
 const { exists, listDir } = require('./util/fsx');
+const { UserError, tr } = require('../shared/usertext');
 const { findJavas, majorOf } = require('./java');
 
 const API = 'https://api.adoptium.net/v3';
@@ -119,16 +120,16 @@ class JavaInstaller {
     if (this.installing.has(major)) return this.installing.get(major);
     const p = this.tasks
       .run(`Java ${major} (Eclipse Temurin)`, { kind: 'java' }, async (task) => {
-        task.progress(0, 'Buscando la versión oficial…');
+        task.progress(0, tr('Buscando la versión oficial…'));
         const asset = await this.latestAsset(major);
-        if (!asset) throw new Error(`Adoptium no tiene Java ${major} para este sistema.`);
+        if (!asset) throw new UserError('Adoptium no tiene Java {major} para este sistema.', { major });
         const archive = path.join(this.dir, 'downloads', asset.name);
         await http.download(asset.url, archive, {
           hash: asset.sha256 || undefined,
           hashAlgo: 'sha256',
           onProgress: (got, total) => task.progress(total ? (got / total) * 0.9 : 0, total ? `${Math.round(got / 1048576)} / ${Math.round(total / 1048576)} MB` : ''),
         });
-        task.progress(0.92, 'Descomprimiendo…');
+        task.progress(0.92, tr('Descomprimiendo…'));
         const target = this.homeFor(major);
         const tmp = `${target}.partial`;
         await fsp.rm(tmp, { recursive: true, force: true });
@@ -136,7 +137,7 @@ class JavaInstaller {
         if (/\.tar\.gz$/i.test(asset.name)) await extractTarGz(archive, tmp);
         else await extractPrefix(archive, '', tmp);
         const home = await findHome(tmp);
-        if (!home) throw new Error('El archivo descargado no contiene Java.');
+        if (!home) throw new UserError('El archivo descargado no contiene Java.');
         if (process.platform !== 'win32') await fsp.chmod(javaBin(home), 0o755).catch(() => {});
         await fsp.rm(target, { recursive: true, force: true });
         await fsp.rename(home, target);

@@ -8,7 +8,7 @@ import { Modal } from '../components/Modal.jsx';
 import { Button, Progress, Spinner, Input } from '../components/ui.jsx';
 import { useApp } from '../lib/store.jsx';
 import { call } from '../lib/api.js';
-import { t } from '../lib/i18n.js';
+import { t, tm } from '../lib/i18n.js';
 
 export default function AddAccountDialog({ onResolve, relogin }) {
   const app = useApp();
@@ -31,7 +31,7 @@ export default function AddAccountDialog({ onResolve, relogin }) {
         return;
       }
       if (r && r.error) {
-        setError(r.error);
+        setError(tm(r.error));
         setState('error');
         return;
       }

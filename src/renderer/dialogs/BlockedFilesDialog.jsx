@@ -6,7 +6,7 @@ import Icon from '../components/Icon.jsx';
 import { Modal } from '../components/Modal.jsx';
 import { Button, Spinner, Progress } from '../components/ui.jsx';
 import { call, on } from '../lib/api.js';
-import { t } from '../lib/i18n.js';
+import { t, tm } from '../lib/i18n.js';
 
 const stateText = (it) =>
   ({
@@ -15,7 +15,7 @@ const stateText = (it) =>
     downloading: `${Math.round((it.progress || 0) * 100)}%`,
     installing: t('Instalando…'),
     done: t('Instalado'),
-    failed: it.reason || t('No se pudo instalar'),
+    failed: it.reason ? tm(it.reason) : t('No se pudo instalar'),
     pending: t('Pendiente'),
   })[it.state] || '';
 

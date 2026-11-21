@@ -24,7 +24,7 @@ const data = path.join(work, 'PrismLauncher');
 execFileSync(process.execPath, [path.join(root, 'scripts/make-fixtures.mjs'), data]);
 fs.mkdirSync(path.join(work, 'userdata'), { recursive: true });
 // no layout chosen yet: the picker comes first
-fs.writeFileSync(path.join(work, 'userdata', 'config.json'), JSON.stringify({ closeToTray: false, importPromptDone: true }));
+fs.writeFileSync(path.join(work, 'userdata', 'config.json'), JSON.stringify({ closeToTray: false, importPromptDone: true, tourDone: true }));
 
 // stand-in for the social networks' embeddable pages
 const embedsAsked = [];
@@ -216,9 +216,8 @@ try {
     await page.locator('.update-projects .modal-foot .btn-primary').click();
     await page.waitForSelector('.update-projects', { state: 'detached', timeout: 30000 });
     await page.waitForTimeout(1500);
-    await page.waitForSelector('.mr-prev', { timeout: 15000 });
-    await cap('04c-previous-version', 600);
-    // the version used before shows up as "Anterior" in Switch version
+    // the version used before shows up as "Anterior" in Switch version (the
+    // table no longer marks it since 1.0.0)
     await page.locator('.mr-tr', { hasText: 'Sodium' }).first().locator('.mr-icon-btn[aria-label="Cambiar versión"]').click();
     await page.waitForSelector('.sv-chip.previous', { timeout: 15000 });
     await cap('04d-switch-previous', 800);

@@ -5,7 +5,7 @@ import { IconButton, Progress, Button } from './ui.jsx';
 import { Popover, MenuItem, MenuSeparator, useMenu } from './Menu.jsx';
 import { useApp } from '../lib/store.jsx';
 import { call } from '../lib/api.js';
-import { t } from '../lib/i18n.js';
+import { t, tm } from '../lib/i18n.js';
 import { skinFace, defaultSkinUrl } from '../lib/skin.js';
 import AddAccountDialog, { OfflineAccountDialog } from '../dialogs/AddAccountDialog.jsx';
 import ImportLaunchersDialog from '../dialogs/ImportLaunchersDialog.jsx';
@@ -147,7 +147,7 @@ export function DownloadsPanel() {
           <div key={task.id} className={`dl-item ${task.status}`}>
             <div className="dl-top">
               <Icon name={task.status === 'done' ? 'checkCircle' : task.status === 'error' ? 'xCircle' : task.status === 'cancelled' ? 'x' : 'download'} size={18} />
-              <span className="dl-title">{task.title}</span>
+              <span className="dl-title">{tm(task.title, task.titleText)}</span>
               {task.status === 'running' && task.cancelable !== false ? (
                 <button className="icon-btn dl-cancel" aria-label={t('Detener')} data-tip={t('Detener')} onClick={() => call('tasks.cancel', task.id)}>
                   <Icon name="x" size={16} />
@@ -155,7 +155,7 @@ export function DownloadsPanel() {
               ) : null}
             </div>
             {task.status === 'running' ? <Progress value={task.progress} indeterminate={!task.progress} /> : null}
-            <div className="dl-detail">{task.status === 'error' ? task.error : task.detail}</div>
+            <div className="dl-detail">{task.status === 'error' ? tm(task.error, task.errorText) : tm(task.detail, task.detailText)}</div>
           </div>
         ))}
       </div>

@@ -17,6 +17,8 @@ export function applyTheme(presetKey, overrides, { reduceMotion = false, season 
   const root = document.documentElement;
   for (const [k, v] of Object.entries(p)) root.style.setProperty(cssName(k), v);
   const light = luminance(p.bg) > 0.5;
+  // light or dark theme, for colors that need one value for each (e.g. the loader tags)
+  root.dataset.tone = light ? 'light' : 'dark';
   const [ar, ag, ab] = hexToRgb(p.accent);
   root.style.setProperty('--accent-hover', mix(p.accent, light ? '#000000' : '#ffffff', 0.12));
   root.style.setProperty('--accent-press', mix(p.accent, '#000000', 0.15));

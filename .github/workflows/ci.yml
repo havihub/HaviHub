@@ -10,8 +10,13 @@ permissions:
 
 jobs:
   test:
-    name: Tests and build
-    runs-on: ubuntu-latest
+    name: Tests and build (${{ matrix.os }})
+    # Windows too: that is where most people play, and paths and links behave differently there
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     env:
       # the tests run on Node; Electron itself is not needed here
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"

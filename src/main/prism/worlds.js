@@ -6,6 +6,7 @@ const { listDir, statSafe, exists, safeName, uniqueDirName, copyDir } = require(
 const { fileUrl } = require('../urls');
 const { gameDirOf } = require('./instances');
 const zip = require('../util/zip');
+const { UserError } = require('../../shared/usertext');
 
 const GAME_MODES = ['survival', 'creative', 'adventure', 'spectator'];
 
@@ -109,7 +110,7 @@ class Worlds {
     await fsp.mkdir(saves, { recursive: true });
     const names = await zip.listEntries(zipPath);
     const levelEntry = names.find((n) => /(^|\/)level\.dat$/.test(n));
-    if (!levelEntry) throw new Error('El zip no contiene un mundo (falta level.dat)');
+    if (!levelEntry) throw new UserError('El zip no contiene un mundo (falta level.dat)');
     const prefix = levelEntry.slice(0, levelEntry.length - 'level.dat'.length);
     const base = prefix ? prefix.replace(/\/$/, '').split('/').pop() : path.basename(zipPath, '.zip');
     const dest = await uniqueDirName(saves, safeName(base, 'world'));
@@ -167,7 +168,7 @@ class Worlds {
   async editServer(id, index, { name, ip }) {
     const typed = await this.readServersTyped(id);
     const item = typed.value.servers.v.items[index];
-    if (!item) throw new Error('Servidor no encontrado');
+    if (!item) throw new UserError('Servidor no encontrado');
     if (name !== undefined) item.name = nbt.tag.string(name);
     if (ip !== undefined) item.ip = nbt.tag.string(ip);
     await this.writeServers(id, typed);

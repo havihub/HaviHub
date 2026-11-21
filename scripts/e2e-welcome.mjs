@@ -327,6 +327,8 @@ async function originals(page) {
     await run.page.locator('.close-behavior .cb-option', { hasText: 'Cerrarlo del todo' }).click();
     await run.page.locator('.close-behavior .btn-primary').click();
     await run.page.waitForSelector('.close-behavior', { state: 'detached' });
+    // the dialog closes before the settings file is written: give it a moment
+    for (let i = 0; i < 20 && (() => { try { return configOf(updated).closeToTray; } catch { return undefined; } })() !== false; i++) await run.page.waitForTimeout(150);
     check('E: and it is saved', configOf(updated).closeToTray === false);
   } catch (e) {
     check(`E: ${e.message.split('\n')[0]}`, false);

@@ -8,6 +8,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const { readEntries } = require('./util/zip');
+const { UserError } = require('../shared/usertext');
 
 const MANIFEST = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json';
 const NAME = /^[a-z0-9_]+(\/[a-z0-9_]+){1,3}$/;
@@ -243,10 +244,10 @@ class McAssets {
         const manifest = await this.http.getJson(MANIFEST, { timeout: 20000 });
         const id = manifest.latest && manifest.latest.release;
         const entry = (manifest.versions || []).find((v) => v.id === id);
-        if (!entry) throw new Error('Mojang no indicó cuál es la última versión del juego.');
+        if (!entry) throw new UserError('Mojang no indicó cuál es la última versión del juego.');
         const meta = await this.http.getJson(entry.url, { timeout: 20000 });
         const client = meta.downloads && meta.downloads.client;
-        if (!client || !client.url) throw new Error('Mojang no indicó dónde descargar el juego.');
+        if (!client || !client.url) throw new UserError('Mojang no indicó dónde descargar el juego.');
         await fsp.mkdir(this.cacheDir, { recursive: true });
         const dest = path.join(this.cacheDir, `client-${id}.jar`);
         const tmp = `${dest}.part`;

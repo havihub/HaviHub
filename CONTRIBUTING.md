@@ -42,6 +42,7 @@ Some guidelines:
 - Keep each pull request focused on one change, and describe what it does and how it was tested.
 - Follow the style of the surrounding code. Comments are written in English and explain why something is done, not only what.
 - Interface text is written in Spanish inside `t('…')`. After adding or changing a string, run `node scripts/i18n/gen.mjs` and add the English translation to `src/renderer/lib/i18n-en.js`.
+- Text the main process shows to the person (errors, the downloads panel) is written the same way, with `new UserError('…', { … })` and `tr('…', { … })` from `src/shared/usertext.js`, so the interface can translate it. Use `{name}` placeholders, not template literals.
 - Add or update tests for behavior that can be tested without the game.
 - Do not include images, sounds or other files from Minecraft or from other projects unless their license allows it. The app reads the game's own files from the player's computer instead.
 

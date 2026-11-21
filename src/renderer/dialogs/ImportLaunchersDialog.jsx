@@ -8,7 +8,7 @@ import { Button, Checkbox, Spinner, Progress } from '../components/ui.jsx';
 import InstanceImage, { LoaderIcon } from '../components/InstanceImage.jsx';
 import { useApp } from '../lib/store.jsx';
 import { call } from '../lib/api.js';
-import { t } from '../lib/i18n.js';
+import { t, tm } from '../lib/i18n.js';
 import { formatSize } from '../lib/format.js';
 import BrandLogo from '../components/BrandLogo.jsx';
 
@@ -33,7 +33,7 @@ function SourceCard({ s, on, onToggle, onPick }) {
           {s.shared
             ? t('Ya compartes sus perfiles con Havi Hub')
             : s.error
-              ? s.error
+              ? tm(s.error)
               : !s.dir
                 ? t('No se encontró en este equipo')
                 : s.count == null
@@ -271,7 +271,7 @@ export default function ImportLaunchersDialog({ onResolve, only = null }) {
                       <Spinner size={22} />
                     </div>
                   ) : d.error ? (
-                    <div className="form-error">{d.error}</div>
+                    <div className="form-error">{tm(d.error)}</div>
                   ) : !d.instances.length ? (
                     <div className="muted import-empty">{t('No hay perfiles aquí.')}</div>
                   ) : (
@@ -314,7 +314,7 @@ export default function ImportLaunchersDialog({ onResolve, only = null }) {
         <div className="import-progress">
           <Progress value={task.progress} indeterminate={!task.progress} />
           <small className="muted">
-            {task.title} · {task.detail}
+            {tm(task.title, task.titleText)} · {tm(task.detail, task.detailText)}
           </small>
         </div>
       ) : null}

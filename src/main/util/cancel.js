@@ -2,11 +2,12 @@
 // inside an async context, so downloads, copies and loops started by that task
 // can see whether it was cancelled without passing a signal around.
 const { AsyncLocalStorage } = require('node:async_hooks');
+const { UserError } = require('../../shared/usertext');
 
 const als = new AsyncLocalStorage();
 
 function cancelledError() {
-  const e = new Error('Cancelado');
+  const e = new UserError('Cancelado');
   e.code = 'CANCELLED';
   return e;
 }

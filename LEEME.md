@@ -5,7 +5,7 @@ Havi Hub es un launcher completo para Windows y Linux:
 - Tiene **dos diseños** y tú eliges cuál: el de **CurseForge** o el de **Modrinth**. Los dos tienen todas las funciones (punto 3).
 - Tiene **su propia carpeta** de perfiles, cuentas y skins.
 - Su **motor de juego** se basa en **Prism Launcher** (código abierto). Havi Hub lo descarga solo desde las versiones oficiales y le pone **el nombre y el ícono de Havi Hub**: sus ventanas (consola, agregar cuenta, etc.) dicen "Havi Hub".
-- **Cada vez que abres Havi Hub**, revisa en segundo plano si salió una versión nueva del motor y la instala sola. Si estás jugando, la nueva versión se activa cuando cierras el juego.
+- **Cada vez que abres Havi Hub**, revisa en segundo plano si salió una versión nueva del motor y la instala sola, si ya se probó con tu versión de Havi Hub (una versión de Prism Launcher más nueva espera a una actualización de Havi Hub que la haya probado). Si estás jugando, la nueva versión se activa cuando cierras el juego.
 - No necesitas tener Prism Launcher instalado. Si igual lo usas, puedes **sincronizar los perfiles** con él, con CurseForge y con la app de Modrinth, todo desde **Sincronizar perfiles** (punto 11).
 
 ---

@@ -20,6 +20,7 @@ const { hashFile } = require('./util/hash');
 const { fileUrl } = require('./urls');
 const { throwIfCancelled } = require('./util/cancel');
 const { cleanEnv } = require('../shared/envvars');
+const { UserError, tr } = require('../shared/usertext');
 
 const LOADER_INFO = {
   fabric: { uid: 'net.fabricmc.fabric-loader', name: 'Fabric' },
@@ -129,7 +130,7 @@ class Importer {
 
   async refuseShared(srcDir) {
     if (await this.isShared(srcDir)) {
-      const e = new Error('Havi Hub ya comparte los perfiles con esta instalación de Prism Launcher: no hace falta importarlos.');
+      const e = new UserError('Havi Hub ya comparte los perfiles con esta instalación de Prism Launcher: no hace falta importarlos.');
       e.code = 'SHARED';
       throw e;
     }
@@ -138,7 +139,7 @@ class Importer {
   async list(srcDir) {
     await this.refuseShared(srcDir);
     if (!(await isPrismDataDir(srcDir))) {
-      const e = new Error('Esa carpeta no parece ser de Prism Launcher (no tiene prismlauncher.cfg ni la carpeta instances).');
+      const e = new UserError('Esa carpeta no parece ser de Prism Launcher (no tiene prismlauncher.cfg ni la carpeta instances).');
       e.code = 'BAD_SOURCE';
       throw e;
     }
@@ -178,7 +179,7 @@ class Importer {
   // opts: { srcDir, ids, move, accounts, skins, groups, shared, globals }
   async run(opts) {
     const ctx = this.ctxProvider();
-    if (!ctx) throw new Error('La carpeta de datos de Havi Hub no está disponible.');
+    if (!ctx) throw new UserError('La carpeta de datos de Havi Hub no está disponible.');
     await this.refuseShared(opts.srcDir);
     const src = new PrismContext(path.resolve(opts.srcDir), null);
     const srcInstances = new Instances(src, this.appConfig);
@@ -188,10 +189,10 @@ class Importer {
     const srcGroups = opts.groups !== false ? await groups.loadGroupsSafe(src) : null;
     const label = this.label(src.dataDir);
 
-    return this.tasks.run(`Importando desde ${label}`, { kind: 'import' }, async (task) => {
+    return this.tasks.run(tr('Importando desde {from}', { from: label }), { kind: 'import' }, async (task) => {
       const plan = [];
       let totalBytes = 0;
-      task.progress(0, 'Calculando tamaño…');
+      task.progress(0, tr('Calculando tamaño…'));
       for (const id of opts.ids || []) {
         const root = await srcInstances.locate(id);
         const walk = opts.move ? { files: [], bytes: 0 } : await walkFiles(root);
@@ -271,7 +272,7 @@ class Importer {
       // not copied, so the first launch doesn't download them again
       let shared = 0;
       if (opts.shared !== false) {
-        shared = await this.linkShared(src.dataDir, ctx.dataDir, (n) => task.progress(1, `Reusando archivos del juego ya descargados… ${n}`)).catch(() => 0);
+        shared = await this.linkShared(src.dataDir, ctx.dataDir, (n) => task.progress(1, tr('Reusando archivos del juego ya descargados… {n}', { n }))).catch(() => 0);
       }
       task.progress(1, '');
       this.emit('instances:changed', {});
@@ -337,12 +338,12 @@ class Importer {
     if (source === 'curseforge') {
       const root = await cfImport.resolveRoot(dir);
       const profiles = root && (await exists(root)) ? await cfImport.listProfiles(root) : [];
-      if (!profiles.length) throw Object.assign(new Error('No se encontraron perfiles de CurseForge en esa carpeta (busca la carpeta "Instances" de CurseForge).'), { code: 'BAD_SOURCE' });
+      if (!profiles.length) throw Object.assign(new UserError('No se encontraron perfiles de CurseForge en esa carpeta (busca la carpeta "Instances" de CurseForge).'), { code: 'BAD_SOURCE' });
       return { root, profiles, shared: cfImport.sharedDirs(root), skip: cfImport.SKIP };
     }
     if (source === 'modrinth') {
       const root = await mrImport.resolveRoot(dir);
-      if (!(await mrImport.isApp(root))) throw Object.assign(new Error('Esa carpeta no parece ser de la app de Modrinth (no tiene app.db ni la carpeta profiles).'), { code: 'BAD_SOURCE' });
+      if (!(await mrImport.isApp(root))) throw Object.assign(new UserError('Esa carpeta no parece ser de la app de Modrinth (no tiene app.db ni la carpeta profiles).'), { code: 'BAD_SOURCE' });
       const { configDir, profiles, launch } = await mrImport.readApp(root);
       return { root, profiles, launch, shared: mrImport.sharedDirs(configDir), skip: mrImport.SKIP };
     }
@@ -395,15 +396,15 @@ class Importer {
   async runFrom(opts) {
     if (opts.source === 'prism' || !opts.source) return this.run(opts);
     const ctx = this.ctxProvider();
-    if (!ctx) throw new Error('La carpeta de datos de Havi Hub no está disponible.');
+    if (!ctx) throw new UserError('La carpeta de datos de Havi Hub no está disponible.');
     const { profiles, shared, skip, launch } = await this.externalProfiles(opts.source, opts.srcDir);
     const chosen = profiles.filter((p) => (opts.ids || []).includes(p.id));
     const ownDirs = await ctx.dirs();
     await fsp.mkdir(ownDirs.primaryInstanceDir, { recursive: true });
     const instances = new Instances(ctx, this.appConfig);
     const label = SOURCE_LABEL[opts.source];
-    return this.tasks.run(`Importando desde ${label}`, { kind: 'import' }, async (task) => {
-      task.progress(0, 'Calculando tamaño…');
+    return this.tasks.run(tr('Importando desde {from}', { from: label }), { kind: 'import' }, async (task) => {
+      task.progress(0, tr('Calculando tamaño…'));
       let totalBytes = 0;
       for (const p of chosen) {
         // a profile synced by Havi Hub is a link to the shared folder: copy what it points to
@@ -446,7 +447,7 @@ class Importer {
       let linked = 0;
       if (opts.shared !== false) {
         for (const [from, name] of shared) {
-          linked += await this.linkInto(from, path.join(ctx.dataDir, name), (n) => task.progress(1, `Reusando archivos del juego ya descargados… ${n}`)).catch(() => 0);
+          linked += await this.linkInto(from, path.join(ctx.dataDir, name), (n) => task.progress(1, tr('Reusando archivos del juego ya descargados… {n}', { n }))).catch(() => 0);
         }
       }
       task.progress(1, '');

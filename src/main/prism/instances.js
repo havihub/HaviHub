@@ -10,6 +10,7 @@ const { cleanText } = require('../../shared/limits.js');
 const { fileUrl } = require('../urls');
 const groups = require('./groups');
 const { keyForOptions } = require('../../shared/mckeys-legacy');
+const { UserError } = require('../../shared/usertext');
 
 const ICON_EXTS = ['png', 'svg', 'jpg', 'jpeg', 'webp', 'gif', 'ico'];
 // instance.cfg key with the recipe of a generated icon ("background/symbol")
@@ -86,9 +87,21 @@ async function readOptions(file) {
   return lines;
 }
 
+// Minecraft upgrades an options.txt from the version it says it was saved
+// in (its "version:" line). With none, it assumes the oldest one and runs
+// every upgrade, among them the one for the numeric keys used before 1.13:
+// it reads "key.keyboard.g" as a number, fails, and throws the whole file
+// away ("Failed to load options"), so the profile starts with none of Havi
+// Hub's options or keys, and with the game's welcome screen. Havi Hub
+// writes options in the current format, so a file without that line says
+// it is already current: a version no Minecraft has reached, so nothing is
+// upgraded. The game writes its own version the next time it saves the file.
+const OPTIONS_VERSION = '999999';
+
 async function writeOptions(file, lines) {
   await fsp.mkdir(path.dirname(file), { recursive: true });
-  await fsp.writeFile(file, [...lines].map(([k, v]) => `${k}:${v}`).join('\n') + '\n');
+  const out = lines.has('version') ? lines : new Map([['version', OPTIONS_VERSION], ...lines]);
+  await fsp.writeFile(file, [...out].map(([k, v]) => `${k}:${v}`).join('\n') + '\n');
 }
 
 // key bindings the user changed ('' = keep Minecraft's) in this version's format
@@ -116,7 +129,7 @@ class Instances {
       const root = path.join(d, id);
       if (await exists(path.join(root, 'instance.cfg'))) return root;
     }
-    const err = new Error(`No se encontró la instancia "${id}"`);
+    const err = new UserError('No se encontró la instancia "{id}"', { id });
     err.code = 'NOT_FOUND';
     throw err;
   }
@@ -267,7 +280,7 @@ class Instances {
 
   async rename(id, name) {
     const clean = cleanText(name, 64);
-    if (!clean) throw new Error('El nombre no puede estar vacío');
+    if (!clean) throw new UserError('El nombre no puede estar vacío');
     await this.setSettings(id, { name: clean });
   }
 
@@ -314,7 +327,7 @@ class Instances {
 
   // ---- creation ----
   async create({ name, group, mcVersion, loader, loaderVersion, imagePng, iconRecipe, iconKey, extraSettings } = {}) {
-    if (!mcVersion) throw new Error('Falta la versión de Minecraft');
+    if (!mcVersion) throw new UserError('Falta la versión de Minecraft');
     const { primaryInstanceDir } = await this.ctx.dirs();
     await fsp.mkdir(primaryInstanceDir, { recursive: true });
     const displayName = String(name || '').trim() || `Minecraft ${mcVersion}`;
@@ -389,15 +402,32 @@ class Instances {
         skipped.push(inst.name);
         continue;
       }
-      const gameDir = gameDirOf(inst.root);
-      const file = path.join(gameDir, 'options.txt');
-      const lines = await readOptions(file);
-      if (!setKeyLines(lines, keys, inst.mcVersion)) continue;
-      await fsp.mkdir(gameDir, { recursive: true });
-      await writeOptions(file, lines);
-      count++;
+      if (await this.writeKeys(inst, keys)) count++;
     }
     return { count, skipped };
+  }
+
+  // The customized key bindings into one profile's options.txt (the rest of
+  // its options stay). False when there was nothing to change.
+  async applyKeysTo(id) {
+    const keys = (this.appConfig.get().inGameDefaults || {}).keys || {};
+    return this.writeKeys(await this.get(id), keys);
+  }
+
+  async writeKeys(inst, keys) {
+    const gameDir = gameDirOf(inst.root);
+    const file = path.join(gameDir, 'options.txt');
+    const lines = await readOptions(file);
+    if (!setKeyLines(lines, keys, inst.mcVersion)) return false;
+    await fsp.mkdir(gameDir, { recursive: true });
+    await writeOptions(file, lines);
+    return true;
+  }
+
+  // Whether the person has key bindings of their own (Ajustes → Minecraft → Teclas)
+  hasCustomKeys() {
+    const d = this.appConfig.get().inGameDefaults || {};
+    return Boolean(d.enabled) && Object.entries(d.keys || {}).some(([id, key]) => key && /^key\./.test(id));
   }
 
   // ---- image ----

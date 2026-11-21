@@ -7,7 +7,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { repairLinuxShortcuts, desktopEntry, desktopArg } = require('../src/main/prism/shortcuts');
 
-test('a profile shortcut whose program is gone is pointed to this copy; working ones and foreign files stay', async () => {
+// .desktop files only exist on Linux, and their paths are written as on Linux
+const linuxOnly = { skip: process.platform !== 'linux' };
+
+test('a profile shortcut whose program is gone is pointed to this copy; working ones and foreign files stay', linuxOnly, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'havihub-sc-'));
   const exe = path.join(dir, 'opt', 'havihub', 'havihub');
   fs.mkdirSync(path.dirname(exe), { recursive: true });
@@ -33,7 +36,7 @@ test('a profile shortcut whose program is gone is pointed to this copy; working 
   assert.equal(await repairLinuxShortcuts({ dirs: [dir], exe, preArgs: [] }), 0);
 });
 
-test('a profile shortcut that shows Havi Hub\'s icon by its old name gets the current one', async () => {
+test('a profile shortcut that shows Havi Hub\'s icon by its old name gets the current one', linuxOnly, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'havihub-sc-icon-'));
   const exe = path.join(dir, 'havihub');
   fs.writeFileSync(exe, '');
